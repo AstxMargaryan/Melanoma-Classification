@@ -1,7 +1,27 @@
 # Melanoma-Classification
-This project develops a deep learning model to detect melanoma from dermoscopic images by incorporating patient-level contextual information, aiming to improve early diagnosis and support clinical decision-making.
 
+## Project Overview
 
+Skin cancer is the most common type of cancer worldwide, and one of its most dangerous forms is melanoma. Although melanoma is relatively rare, it is responsible for approximately 75% of skin cancer-related deaths. Melanoma is a life-threatening disease, but when detected early, most cases can be successfully treated with minor surgery.
+
+Detecting melanoma is a challenging task, as the differences between skin lesions are often subtle and difficult to identify even for experienced dermatologists. Artificial intelligence enables the analysis of medical images and the detection of hidden patterns, improving diagnostic accuracy and identifying features that may not be noticeable to dermatologists.
+
+The goal of this project is to develop a deep learning model that analyzes dermoscopic images of skin lesions and predicts the probability (0–1) of whether they are malignant (melanoma) or benign, with higher values indicating greater melanoma risk.
+
+The dataset consists of dermoscopic images of skin lesions along with associated metadata. Images are provided in DICOM format (as well as JPEG and TFRecord formats), while additional information is available in CSV files.
+
+Each sample includes the following features:
+
+- `image_name` – unique identifier, points to filename of related DICOM image  
+- `patient_id` – unique patient identifier  
+- `sex` – sex of the patient (may be missing)  
+- `age_approx` – approximate patient age at time of imaging  
+- `anatom_site_general_challenge` – anatomical location of the lesion  
+- `diagnosis` – detailed diagnosis (train only)  
+- `benign_malignant` – indicator of malignancy  
+- `target` – binary target (0 = benign, 1 = malignant)  
+
+This problem is formulated as a probabilistic binary classification task, where the model estimates the probability that a given skin lesion is malignant.
 
 
 ## How to Run
