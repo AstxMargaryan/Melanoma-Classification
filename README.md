@@ -34,3 +34,39 @@ source venv/bin/activate
 ```bash
 pip install -r requirements.txt
 ```
+
+##  4. Dataset Setup
+
+The dataset is NOT included in this repository.
+
+### Option 1 — Download manually (Recommended)
+
+Download the dataset from Google Drive:
+
+👉 [Download Dataset](https://drive.google.com/drive/folders/1RVukTxOQh0fXm3kpTRPTFHZ8ELBN-nsW?usp=drive_link)
+
+Then extract it into the project root so the structure looks like:
+
+```bash
+Melanoma-Classification/
+├── dataset/
+│   ├── train.csv
+│   ├── test.csv
+│   ├── sample_submission.csv
+│   ├── train/
+│   ├── test/
+│   ├── jpeg/
+│   └── tfrecords/
+```
+
+### Option 2 — Use Google Colab
+
+If running in Google Colab:
+
+```bash
+from google.colab import drive
+drive.mount('/content/drive')
+
+import os
+os.environ["DATASET_PATH"] = "/content/drive/MyDrive/dataset"
+```
