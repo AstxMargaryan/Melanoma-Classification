@@ -1,3 +1,27 @@
+
+
+#     def __getitem__(self, idx):
+#         # Get row
+#         row = self.df.iloc[idx]
+
+#         # Image path
+#         img_path = os.path.join(self.image_dir, row["image_name"] + ".jpg")
+#         if idx == 0:
+#             print("DEBUG PATH:", img_path)
+
+#         # Load image
+#         image = Image.open(img_path).convert("RGB")
+
+#         # Apply transforms
+#         if self.transform:
+#             image = self.transform(image)
+
+#         # Target
+#         label = row["target"]
+
+#         return image, label
+
+
 import os
 from PIL import Image
 from torch.utils.data import Dataset
@@ -5,13 +29,7 @@ from torch.utils.data import Dataset
 
 class MelanomaDataset(Dataset):
     def __init__(self, df, image_dir, transform=None):
-        """
-        Args:
-            df (pd.DataFrame): dataframe with image_name and target
-            image_dir (str or Path): path to image folder
-            transform (callable, optional): image transformations
-        """
-        self.df = df
+        self.df = df.reset_index(drop=True)
         self.image_dir = image_dir
         self.transform = transform
 
@@ -19,22 +37,14 @@ class MelanomaDataset(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx):
-        # Get row
-        row = self.df.iloc[idx]
+        image_name = self.df.loc[idx, "image_name"]
+        label = self.df.loc[idx, "target"]
 
-        # Image path
-        img_path = os.path.join(self.image_dir, row["image_name"] + ".jpg")
-        if idx == 0:
-            print("DEBUG PATH:", img_path)
+        image_path = os.path.join(self.image_dir, image_name + ".jpg")
 
-        # Load image
-        image = Image.open(img_path).convert("RGB")
+        image = Image.open(image_path).convert("RGB")
 
-        # Apply transforms
         if self.transform:
             image = self.transform(image)
-
-        # Target
-        label = row["target"]
 
         return image, label
