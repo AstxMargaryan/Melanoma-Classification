@@ -1331,7 +1331,7 @@ from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
 
 from dataset import MelanomaDataset
-from model import build_model
+from baseline_model import build_model
 
 
 # ======================
