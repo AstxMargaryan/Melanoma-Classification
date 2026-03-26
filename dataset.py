@@ -78,30 +78,27 @@
 #         return image, label
 
 
-from pathlib import Path
-from PIL import Image
 from torch.utils.data import Dataset
-
+from PIL import Image
+import os
 
 class MelanomaDataset(Dataset):
-    def __init__(self, df, image_dir, transform=None):
-        self.df = df.reset_index(drop=True)
-        self.image_dir = Path(image_dir)
+    def __init__(self, df, img_dir, transform=None):
+        self.df = df
+        self.img_dir = img_dir
         self.transform = transform
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, idx):
-        row = self.df.iloc[idx]
+        img_name = self.df.iloc[idx]['image_name'] + ".jpg"
+        img_path = os.path.join(self.img_dir, img_name)
 
-        image_name = row["image_name"]
-        label = int(row["target"])
+        image = Image.open(img_path).convert("RGB")
+        label = self.df.iloc[idx]['target']
 
-        image_path = self.image_dir / f"{image_name}.jpg"
-        image = Image.open(image_path).convert("RGB")
-
-        if self.transform is not None:
+        if self.transform:
             image = self.transform(image)
 
         return image, label

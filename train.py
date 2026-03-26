@@ -1317,308 +1317,404 @@
 # print("Best Val F1:", best_val_f1)
 # print("Best Threshold:", best_threshold)
 
-import os
-import copy
-from pathlib import Path
+# import os
+# import copy
+# from pathlib import Path
 
-import numpy as np
-import pandas as pd
+# import numpy as np
+# import pandas as pd
+# import torch
+# import torch.nn as nn
+# from torchvision import transforms
+# from torch.utils.data import DataLoader
+# from sklearn.model_selection import GroupShuffleSplit
+# from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
+
+# from dataset import MelanomaDataset
+# from baseline_model import build_model
+
+
+# # ======================
+# # Config
+# # ======================
+# SEED = 42
+# IMAGE_SIZE = 224
+# BATCH_SIZE = 32
+# EPOCHS = 5
+# LR = 1e-4
+# NUM_WORKERS = 0
+# PATIENCE = 2
+
+# DATASET_PATH = Path(os.getenv("DATASET_PATH", "dataset"))
+# CSV_PATH = DATASET_PATH / "train.csv"
+# IMAGE_DIR = DATASET_PATH / "jpeg" / "train"
+# SAVE_PATH = Path("best_model.pth")
+
+
+# # ======================
+# # Reproducibility
+# # ======================
+# def set_seed(seed=42):
+#     np.random.seed(seed)
+#     torch.manual_seed(seed)
+#     torch.cuda.manual_seed_all(seed)
+
+
+# set_seed(SEED)
+
+
+# # ======================
+# # Device
+# # ======================
+# if torch.cuda.is_available():
+#     DEVICE = torch.device("cuda")
+# elif torch.backends.mps.is_available():
+#     DEVICE = torch.device("mps")
+# else:
+#     DEVICE = torch.device("cpu")
+
+# print("Using device:", DEVICE)
+# if DEVICE.type == "cuda":
+#     print("GPU:", torch.cuda.get_device_name(0))
+
+
+# # ======================
+# # Transforms
+# # ======================
+# train_transform = transforms.Compose([
+#     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+#     transforms.RandomHorizontalFlip(),
+#     transforms.RandomVerticalFlip(),
+#     transforms.RandomRotation(15),
+#     transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+#     transforms.ToTensor(),
+#     transforms.Normalize(
+#         mean=[0.485, 0.456, 0.406],
+#         std=[0.229, 0.224, 0.225]
+#     ),
+# ])
+
+# val_transform = transforms.Compose([
+#     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+#     transforms.ToTensor(),
+#     transforms.Normalize(
+#         mean=[0.485, 0.456, 0.406],
+#         std=[0.229, 0.224, 0.225]
+#     ),
+# ])
+
+
+# # ======================
+# # Load data
+# # ======================
+# df = pd.read_csv(CSV_PATH)
+
+# print("Full dataframe shape:", df.shape)
+# print(df[["image_name", "patient_id", "target"]].head())
+
+
+# # ======================
+# # Patient-wise split
+# # ======================
+# gss = GroupShuffleSplit(
+#     n_splits=1,
+#     test_size=0.2,
+#     random_state=SEED
+# )
+
+# train_idx, val_idx = next(gss.split(df, groups=df["patient_id"]))
+
+# train_df = df.iloc[train_idx].reset_index(drop=True)
+# val_df = df.iloc[val_idx].reset_index(drop=True)
+
+# print("Train shape:", train_df.shape)
+# print("Val shape:", val_df.shape)
+
+# overlap = set(train_df["patient_id"]).intersection(set(val_df["patient_id"]))
+# print("Overlapping patients:", len(overlap))
+
+
+# # ======================
+# # Datasets
+# # ======================
+# train_dataset = MelanomaDataset(
+#     df=train_df,
+#     image_dir=IMAGE_DIR,
+#     transform=train_transform
+# )
+
+# val_dataset = MelanomaDataset(
+#     df=val_df,
+#     image_dir=IMAGE_DIR,
+#     transform=val_transform
+# )
+
+
+# # ======================
+# # DataLoaders
+# # ======================
+# pin_memory = DEVICE.type == "cuda"
+
+# train_loader = DataLoader(
+#     train_dataset,
+#     batch_size=BATCH_SIZE,
+#     shuffle=True,
+#     num_workers=NUM_WORKERS,
+#     pin_memory=pin_memory
+# )
+
+# val_loader = DataLoader(
+#     val_dataset,
+#     batch_size=BATCH_SIZE,
+#     shuffle=False,
+#     num_workers=NUM_WORKERS,
+#     pin_memory=pin_memory
+# )
+
+
+# # ======================
+# # Class weights
+# # ======================
+# class_counts = train_df["target"].value_counts().sort_index()
+# print("Class counts:")
+# print(class_counts)
+
+# num_neg = class_counts.get(0, 1)
+# num_pos = class_counts.get(1, 1)
+
+# class_weights = torch.tensor(
+#     [1.0, num_neg / num_pos],
+#     dtype=torch.float32,
+#     device=DEVICE
+# )
+
+# print("Class weights:", class_weights)
+
+
+# # ======================
+# # Model / Loss / Optimizer
+# # ======================
+# model = build_model(num_classes=2).to(DEVICE)
+
+# criterion = nn.CrossEntropyLoss(weight=class_weights)
+# optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+
+# use_amp = DEVICE.type == "cuda"
+# scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+
+
+# # ======================
+# # Train function
+# # ======================
+# def train_one_epoch(model, loader, criterion, optimizer, device):
+#     model.train()
+
+#     running_loss = 0.0
+#     all_preds = []
+#     all_labels = []
+
+#     for batch_idx, (images, labels) in enumerate(loader):
+#         images = images.to(device)
+#         labels = labels.to(device)
+
+#         optimizer.zero_grad()
+
+#         with torch.cuda.amp.autocast(enabled=use_amp):
+#             outputs = model(images)
+#             loss = criterion(outputs, labels)
+
+#         scaler.scale(loss).backward()
+#         scaler.step(optimizer)
+#         scaler.update()
+
+#         running_loss += loss.item() * images.size(0)
+
+#         preds = torch.argmax(outputs, dim=1)
+#         all_preds.extend(preds.detach().cpu().numpy())
+#         all_labels.extend(labels.detach().cpu().numpy())
+
+#         if batch_idx % 100 == 0:
+#             print(f"Train batch {batch_idx}/{len(loader)}")
+
+#     epoch_loss = running_loss / len(loader.dataset)
+#     epoch_acc = accuracy_score(all_labels, all_preds)
+#     epoch_f1 = f1_score(all_labels, all_preds, zero_division=0)
+
+#     return epoch_loss, epoch_acc, epoch_f1
+
+
+# # ======================
+# # Validation function
+# # ======================
+# @torch.no_grad()
+# def validate_one_epoch(model, loader, criterion, device):
+#     model.eval()
+
+#     running_loss = 0.0
+#     all_preds = []
+#     all_labels = []
+
+#     for images, labels in loader:
+#         images = images.to(device)
+#         labels = labels.to(device)
+
+#         outputs = model(images)
+#         loss = criterion(outputs, labels)
+
+#         running_loss += loss.item() * images.size(0)
+
+#         preds = torch.argmax(outputs, dim=1)
+#         all_preds.extend(preds.detach().cpu().numpy())
+#         all_labels.extend(labels.detach().cpu().numpy())
+
+#     epoch_loss = running_loss / len(loader.dataset)
+#     epoch_acc = accuracy_score(all_labels, all_preds)
+#     epoch_f1 = f1_score(all_labels, all_preds, zero_division=0)
+#     epoch_precision = precision_score(all_labels, all_preds, zero_division=0)
+#     epoch_recall = recall_score(all_labels, all_preds, zero_division=0)
+#     epoch_cm = confusion_matrix(all_labels, all_preds)
+
+#     return epoch_loss, epoch_acc, epoch_f1, epoch_precision, epoch_recall, epoch_cm
+
+
+# # ======================
+# # Training loop
+# # ======================
+# best_f1 = -1.0
+# best_model_wts = copy.deepcopy(model.state_dict())
+# early_stop_counter = 0
+
+# for epoch in range(EPOCHS):
+#     print(f"\nEpoch {epoch + 1}/{EPOCHS}")
+
+#     train_loss, train_acc, train_f1 = train_one_epoch(
+#         model, train_loader, criterion, optimizer, DEVICE
+#     )
+
+#     val_loss, val_acc, val_f1, val_precision, val_recall, val_cm = validate_one_epoch(
+#         model, val_loader, criterion, DEVICE
+#     )
+
+#     print(f"\nResults for epoch {epoch + 1}")
+#     print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | Train F1: {train_f1:.4f}")
+#     print(f"Val   Loss: {val_loss:.4f} | Val   Acc: {val_acc:.4f} | Val   F1: {val_f1:.4f}")
+#     print(f"Val Precision: {val_precision:.4f} | Val Recall: {val_recall:.4f}")
+#     print("Val Confusion Matrix:")
+#     print(val_cm)
+
+#     if val_f1 > best_f1:
+#         best_f1 = val_f1
+#         best_model_wts = copy.deepcopy(model.state_dict())
+#         torch.save(model.state_dict(), SAVE_PATH)
+#         print(f"Best model saved to: {SAVE_PATH}")
+#         early_stop_counter = 0
+#     else:
+#         early_stop_counter += 1
+#         print(f"No improvement. Early stop counter: {early_stop_counter}/{PATIENCE}")
+
+#     if early_stop_counter >= PATIENCE:
+#         print("Early stopping triggered.")
+#         break
+
+
+# # ======================
+# # Final
+# # ======================
+# model.load_state_dict(best_model_wts)
+# print(f"\nTraining finished. Best Val F1: {best_f1:.4f}")
+
 import torch
 import torch.nn as nn
-from torchvision import transforms
+import pandas as pd
 from torch.utils.data import DataLoader
-from sklearn.model_selection import GroupShuffleSplit
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
+from torchvision import transforms
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score
 
 from dataset import MelanomaDataset
-from baseline_model import build_model
+from baseline_model import get_model
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# ======================
-# Config
-# ======================
-SEED = 42
-IMAGE_SIZE = 224
-BATCH_SIZE = 32
-EPOCHS = 5
-LR = 1e-4
-NUM_WORKERS = 2
-PATIENCE = 2
+# paths
+CSV_PATH = "dataset/train.csv"
+IMG_DIR = "dataset/jpeg/train"
 
-DATASET_PATH = Path(os.getenv("DATASET_PATH", "dataset"))
-CSV_PATH = DATASET_PATH / "train.csv"
-IMAGE_DIR = DATASET_PATH / "jpeg" / "train"
-SAVE_PATH = Path("best_model.pth")
-
-
-# ======================
-# Reproducibility
-# ======================
-def set_seed(seed=42):
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-
-set_seed(SEED)
-
-
-# ======================
-# Device
-# ======================
-if torch.cuda.is_available():
-    DEVICE = torch.device("cuda")
-elif torch.backends.mps.is_available():
-    DEVICE = torch.device("mps")
-else:
-    DEVICE = torch.device("cpu")
-
-print("Using device:", DEVICE)
-if DEVICE.type == "cuda":
-    print("GPU:", torch.cuda.get_device_name(0))
-
-
-# ======================
-# Transforms
-# ======================
+# transforms
 train_transform = transforms.Compose([
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+    transforms.Resize((224, 224)),
     transforms.RandomHorizontalFlip(),
-    transforms.RandomVerticalFlip(),
-    transforms.RandomRotation(15),
-    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-    transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
-    ),
+    transforms.ToTensor()
 ])
 
 val_transform = transforms.Compose([
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
-    ),
+    transforms.Resize((224, 224)),
+    transforms.ToTensor()
 ])
 
-
-# ======================
-# Load data
-# ======================
+# load data
 df = pd.read_csv(CSV_PATH)
 
-print("Full dataframe shape:", df.shape)
-print(df[["image_name", "patient_id", "target"]].head())
+# imbalance fix
+num_pos = df['target'].sum()
+num_neg = len(df) - num_pos
+pos_weight = torch.tensor([num_neg / num_pos]).to(device)
 
+# split
+train_df, val_df = train_test_split(df, test_size=0.2, stratify=df['target'])
 
-# ======================
-# Patient-wise split
-# ======================
-gss = GroupShuffleSplit(
-    n_splits=1,
-    test_size=0.2,
-    random_state=SEED
-)
+train_dataset = MelanomaDataset(train_df, IMG_DIR, train_transform)
+val_dataset = MelanomaDataset(val_df, IMG_DIR, val_transform)
 
-train_idx, val_idx = next(gss.split(df, groups=df["patient_id"]))
+train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=16)
 
-train_df = df.iloc[train_idx].reset_index(drop=True)
-val_df = df.iloc[val_idx].reset_index(drop=True)
+# model
+model = get_model().to(device)
 
-print("Train shape:", train_df.shape)
-print("Val shape:", val_df.shape)
+criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-overlap = set(train_df["patient_id"]).intersection(set(val_df["patient_id"]))
-print("Overlapping patients:", len(overlap))
+best_auc = 0
 
-
-# ======================
-# Datasets
-# ======================
-train_dataset = MelanomaDataset(
-    df=train_df,
-    image_dir=IMAGE_DIR,
-    transform=train_transform
-)
-
-val_dataset = MelanomaDataset(
-    df=val_df,
-    image_dir=IMAGE_DIR,
-    transform=val_transform
-)
-
-
-# ======================
-# DataLoaders
-# ======================
-pin_memory = DEVICE.type == "cuda"
-
-train_loader = DataLoader(
-    train_dataset,
-    batch_size=BATCH_SIZE,
-    shuffle=True,
-    num_workers=NUM_WORKERS,
-    pin_memory=pin_memory
-)
-
-val_loader = DataLoader(
-    val_dataset,
-    batch_size=BATCH_SIZE,
-    shuffle=False,
-    num_workers=NUM_WORKERS,
-    pin_memory=pin_memory
-)
-
-
-# ======================
-# Class weights
-# ======================
-class_counts = train_df["target"].value_counts().sort_index()
-print("Class counts:")
-print(class_counts)
-
-num_neg = class_counts.get(0, 1)
-num_pos = class_counts.get(1, 1)
-
-class_weights = torch.tensor(
-    [1.0, num_neg / num_pos],
-    dtype=torch.float32,
-    device=DEVICE
-)
-
-print("Class weights:", class_weights)
-
-
-# ======================
-# Model / Loss / Optimizer
-# ======================
-model = build_model(num_classes=2).to(DEVICE)
-
-criterion = nn.CrossEntropyLoss(weight=class_weights)
-optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-
-use_amp = DEVICE.type == "cuda"
-scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
-
-
-# ======================
-# Train function
-# ======================
-def train_one_epoch(model, loader, criterion, optimizer, device):
+for epoch in range(5):
     model.train()
+    total_loss = 0
 
-    running_loss = 0.0
-    all_preds = []
-    all_labels = []
-
-    for batch_idx, (images, labels) in enumerate(loader):
+    for images, labels in train_loader:
         images = images.to(device)
-        labels = labels.to(device)
-
-        optimizer.zero_grad()
-
-        with torch.cuda.amp.autocast(enabled=use_amp):
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
-
-        running_loss += loss.item() * images.size(0)
-
-        preds = torch.argmax(outputs, dim=1)
-        all_preds.extend(preds.detach().cpu().numpy())
-        all_labels.extend(labels.detach().cpu().numpy())
-
-        if batch_idx % 100 == 0:
-            print(f"Train batch {batch_idx}/{len(loader)}")
-
-    epoch_loss = running_loss / len(loader.dataset)
-    epoch_acc = accuracy_score(all_labels, all_preds)
-    epoch_f1 = f1_score(all_labels, all_preds, zero_division=0)
-
-    return epoch_loss, epoch_acc, epoch_f1
-
-
-# ======================
-# Validation function
-# ======================
-@torch.no_grad()
-def validate_one_epoch(model, loader, criterion, device):
-    model.eval()
-
-    running_loss = 0.0
-    all_preds = []
-    all_labels = []
-
-    for images, labels in loader:
-        images = images.to(device)
-        labels = labels.to(device)
+        labels = labels.float().unsqueeze(1).to(device)
 
         outputs = model(images)
         loss = criterion(outputs, labels)
 
-        running_loss += loss.item() * images.size(0)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-        preds = torch.argmax(outputs, dim=1)
-        all_preds.extend(preds.detach().cpu().numpy())
-        all_labels.extend(labels.detach().cpu().numpy())
+        total_loss += loss.item()
 
-    epoch_loss = running_loss / len(loader.dataset)
-    epoch_acc = accuracy_score(all_labels, all_preds)
-    epoch_f1 = f1_score(all_labels, all_preds, zero_division=0)
-    epoch_precision = precision_score(all_labels, all_preds, zero_division=0)
-    epoch_recall = recall_score(all_labels, all_preds, zero_division=0)
-    epoch_cm = confusion_matrix(all_labels, all_preds)
+    print(f"Epoch {epoch+1} Loss: {total_loss/len(train_loader):.4f}")
 
-    return epoch_loss, epoch_acc, epoch_f1, epoch_precision, epoch_recall, epoch_cm
+    # validation
+    model.eval()
+    preds, targets = [], []
 
+    with torch.no_grad():
+        for images, labels in val_loader:
+            images = images.to(device)
+            labels = labels.float().unsqueeze(1).to(device)
 
-# ======================
-# Training loop
-# ======================
-best_f1 = -1.0
-best_model_wts = copy.deepcopy(model.state_dict())
-early_stop_counter = 0
+            outputs = model(images)
+            probs = torch.sigmoid(outputs)
 
-for epoch in range(EPOCHS):
-    print(f"\nEpoch {epoch + 1}/{EPOCHS}")
+            preds.extend(probs.cpu().numpy())
+            targets.extend(labels.cpu().numpy())
 
-    train_loss, train_acc, train_f1 = train_one_epoch(
-        model, train_loader, criterion, optimizer, DEVICE
-    )
+    auc = roc_auc_score(targets, preds)
+    print(f"Epoch {epoch+1} AUC: {auc:.4f}")
 
-    val_loss, val_acc, val_f1, val_precision, val_recall, val_cm = validate_one_epoch(
-        model, val_loader, criterion, DEVICE
-    )
-
-    print(f"\nResults for epoch {epoch + 1}")
-    print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | Train F1: {train_f1:.4f}")
-    print(f"Val   Loss: {val_loss:.4f} | Val   Acc: {val_acc:.4f} | Val   F1: {val_f1:.4f}")
-    print(f"Val Precision: {val_precision:.4f} | Val Recall: {val_recall:.4f}")
-    print("Val Confusion Matrix:")
-    print(val_cm)
-
-    if val_f1 > best_f1:
-        best_f1 = val_f1
-        best_model_wts = copy.deepcopy(model.state_dict())
-        torch.save(model.state_dict(), SAVE_PATH)
-        print(f"Best model saved to: {SAVE_PATH}")
-        early_stop_counter = 0
-    else:
-        early_stop_counter += 1
-        print(f"No improvement. Early stop counter: {early_stop_counter}/{PATIENCE}")
-
-    if early_stop_counter >= PATIENCE:
-        print("Early stopping triggered.")
-        break
-
-
-# ======================
-# Final
-# ======================
-model.load_state_dict(best_model_wts)
-print(f"\nTraining finished. Best Val F1: {best_f1:.4f}")
+    if auc > best_auc:
+        best_auc = auc
+        torch.save(model.state_dict(), "baseline_best.pth")
+        print("✅ saved best model")
