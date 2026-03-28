@@ -147,17 +147,31 @@
 #         x = self.classifier(x)
 #         return x
 
+# import torch.nn as nn
+# from torchvision import models
+
+
+# def build_model(num_classes=2, dropout=0.3):
+#     model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+
+#     in_features = model.fc.in_features
+#     model.fc = nn.Sequential(
+#         nn.Dropout(dropout),
+#         nn.Linear(in_features, num_classes)
+#     )
+
+#     return model
+
+
+
 import torch.nn as nn
 from torchvision import models
 
-
-def build_model(num_classes=2, dropout=0.3):
+def build_model():
     model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
 
+    # փոխում ենք վերջին layer-ը
     in_features = model.fc.in_features
-    model.fc = nn.Sequential(
-        nn.Dropout(dropout),
-        nn.Linear(in_features, num_classes)
-    )
+    model.fc = nn.Linear(in_features, 2)
 
     return model

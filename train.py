@@ -1623,98 +1623,524 @@
 # model.load_state_dict(best_model_wts)
 # print(f"\nTraining finished. Best Val F1: {best_f1:.4f}")
 
-import torch
-import torch.nn as nn
+# import torch
+# import torch.nn as nn
+# import pandas as pd
+# from torch.utils.data import DataLoader
+# from torchvision import transforms
+# from sklearn.model_selection import train_test_split
+# from sklearn.metrics import roc_auc_score
+
+# from dataset import MelanomaDataset
+# from baseline_model import get_model
+
+# device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# # paths
+# CSV_PATH = "dataset/train.csv"
+# IMG_DIR = "dataset/jpeg/train"
+
+# # transforms
+# train_transform = transforms.Compose([
+#     transforms.Resize((224, 224)),
+#     transforms.RandomHorizontalFlip(),
+#     transforms.ToTensor()
+# ])
+
+# val_transform = transforms.Compose([
+#     transforms.Resize((224, 224)),
+#     transforms.ToTensor()
+# ])
+
+# # load data
+# df = pd.read_csv(CSV_PATH)
+
+# # imbalance fix
+# num_pos = df['target'].sum()
+# num_neg = len(df) - num_pos
+# pos_weight = torch.tensor([num_neg / num_pos]).to(device)
+
+# # split
+# train_df, val_df = train_test_split(df, test_size=0.2, stratify=df['target'])
+
+# train_dataset = MelanomaDataset(train_df, IMG_DIR, train_transform)
+# val_dataset = MelanomaDataset(val_df, IMG_DIR, val_transform)
+
+# train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+# val_loader = DataLoader(val_dataset, batch_size=16)
+
+# # model
+# model = get_model().to(device)
+
+# criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+# optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+
+# best_auc = 0
+
+# for epoch in range(5):
+#     model.train()
+#     total_loss = 0
+
+#     for images, labels in train_loader:
+#         images = images.to(device)
+#         labels = labels.float().unsqueeze(1).to(device)
+
+#         outputs = model(images)
+#         loss = criterion(outputs, labels)
+
+#         optimizer.zero_grad()
+#         loss.backward()
+#         optimizer.step()
+
+#         total_loss += loss.item()
+
+#     print(f"Epoch {epoch+1} Loss: {total_loss/len(train_loader):.4f}")
+
+#     # validation
+#     model.eval()
+#     preds, targets = [], []
+
+#     with torch.no_grad():
+#         for images, labels in val_loader:
+#             images = images.to(device)
+#             labels = labels.float().unsqueeze(1).to(device)
+
+#             outputs = model(images)
+#             probs = torch.sigmoid(outputs)
+
+#             preds.extend(probs.cpu().numpy())
+#             targets.extend(labels.cpu().numpy())
+
+#     auc = roc_auc_score(targets, preds)
+#     print(f"Epoch {epoch+1} AUC: {auc:.4f}")
+
+#     if auc > best_auc:
+#         best_auc = auc
+#         torch.save(model.state_dict(), "baseline_best.pth")
+#         print("✅ saved best model")
+
+
+
+# import os
+# from pathlib import Path
+# import pandas as pd
+# import numpy as np
+
+# import torch
+# import torch.nn as nn
+# from torch.utils.data import DataLoader
+# from torchvision import transforms
+# from torch.utils.data import WeightedRandomSampler
+# from sklearn.model_selection import GroupShuffleSplit
+# from sklearn.metrics import accuracy_score, f1_score
+# from collections import Counter
+# from dataset import MelanomaDataset
+# from baseline_model import SimpleCNN
+
+
+# if torch.cuda.is_available():
+#     DEVICE = torch.device("cuda")
+# elif torch.backends.mps.is_available():
+#     DEVICE = torch.device("mps")
+# else:
+#     DEVICE = torch.device("cpu")
+
+# print("Using device:", DEVICE)
+# if DEVICE.type == "cuda":
+#     print("GPU:", torch.cuda.get_device_name(0))
+
+
+# DATASET_PATH = Path(os.getenv("DATASET_PATH", "dataset"))
+
+# IMAGE_DIR = DATASET_PATH / "jpeg" / "train"
+# CSV_PATH = DATASET_PATH / "train.csv"
+
+
+
+# df = pd.read_csv(CSV_PATH)
+# df = df[["image_name", "patient_id", "target"]]
+
+
+# gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+
+# train_idx, val_idx = next(gss.split(df, groups=df["patient_id"]))
+
+# train_df = df.iloc[train_idx].reset_index(drop=True)
+# val_df = df.iloc[val_idx].reset_index(drop=True)
+
+# print("Train shape:", train_df.shape)
+# print("Val shape:", val_df.shape)
+
+# print("\nUnique patients:")
+# print("Train:", train_df["patient_id"].nunique())
+# print("Val:", val_df["patient_id"].nunique())
+
+# overlap = set(train_df["patient_id"]).intersection(set(val_df["patient_id"]))
+# print("\nOverlapping patients:", len(overlap))
+
+# print("Train target distribution:")
+# print(train_df["target"].value_counts())
+# print(train_df["target"].value_counts(normalize=True) * 100)
+
+# print("\nVal target distribution:")
+# print(val_df["target"].value_counts())
+# print(val_df["target"].value_counts(normalize=True) * 100)
+
+# # ======================
+# # Imbalance calculation
+# # ======================
+# class_counts = train_df["target"].value_counts().sort_index()
+
+# num_neg = class_counts[0]
+# num_pos = class_counts[1]
+
+# pos_weight = num_neg / num_pos
+
+# print("\nImbalance ratio:", pos_weight)
+
+
+# # ======================
+# # Sampler
+# # ======================
+# sample_weights = train_df["target"].map({
+#     0: 1.0,
+#     1: pos_weight
+# }).values
+
+# sample_weights = torch.tensor(sample_weights, dtype=torch.float32)
+
+# sampler = WeightedRandomSampler(
+#     weights=sample_weights,
+#     num_samples=len(sample_weights),
+#     replacement=True
+# )
+
+# train_dataset = MelanomaDataset(train_df, IMAGE_DIR)
+# val_dataset = MelanomaDataset(val_df, IMAGE_DIR)
+
+# train_loader = DataLoader(
+#     train_dataset,
+#     batch_size=32,
+#     sampler=sampler,
+#     num_workers=0
+# )
+
+# val_loader = DataLoader(
+#     val_dataset,
+#     batch_size=32,
+#     shuffle=False,
+#     num_workers=0
+# )
+
+# ======================
+
+
+# if torch.cuda.is_available():
+#     DEVICE = torch.device("cuda")
+# elif torch.backends.mps.is_available():
+#     DEVICE = torch.device("mps")
+# else:
+#     DEVICE = torch.device("cpu")
+
+# print("Using device:", DEVICE)
+
+# DATASET_PATH = Path(os.getenv("DATASET_PATH", "dataset"))
+# IMAGE_DIR = DATASET_PATH / "jpeg" / "train"
+# CSV_PATH = DATASET_PATH / "train.csv"
+
+# df = pd.read_csv(CSV_PATH)
+# df = df[["image_name", "patient_id", "target"]]
+
+# gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+# train_idx, val_idx = next(gss.split(df, groups=df["patient_id"]))
+
+# train_df = df.iloc[train_idx].reset_index(drop=True)
+# val_df = df.iloc[val_idx].reset_index(drop=True)
+
+# class_counts = train_df["target"].value_counts().sort_index()
+# num_neg = class_counts[0]
+# num_pos = class_counts[1]
+# pos_weight = num_neg / num_pos
+
+# print("Imbalance ratio:", pos_weight)
+
+# sample_weights = train_df["target"].map({
+#     0: 1.0,
+#     1: pos_weight
+# }).values
+
+# sample_weights = torch.tensor(sample_weights, dtype=torch.float32)
+
+# sampler = WeightedRandomSampler(
+#     weights=sample_weights,
+#     num_samples=len(sample_weights),
+#     replacement=True
+# )
+
+# train_dataset = MelanomaDataset(train_df, IMAGE_DIR)
+# val_dataset = MelanomaDataset(val_df, IMAGE_DIR)
+
+# train_loader = DataLoader(
+#     train_dataset,
+#     batch_size=32,
+#     sampler=sampler,
+#     num_workers=0
+# )
+
+# val_loader = DataLoader(
+#     val_dataset,
+#     batch_size=32,
+#     shuffle=False,
+#     num_workers=0
+# )
+
+# print("\n===== CHECK SAMPLER =====")
+# batch_counter = Counter()
+
+# for i, (_, labels) in enumerate(train_loader):
+#     batch_counter.update(labels.tolist())
+#     if i == 100:
+#         break
+
+# total = batch_counter[0] + batch_counter[1]
+# print("Sampled counts:", batch_counter)
+# print("Class 0 %:", 100 * batch_counter[0] / total)
+# print("Class 1 %:", 100 * batch_counter[1] / total)
+
+
+import os
+from pathlib import Path
+from collections import Counter
+
 import pandas as pd
-from torch.utils.data import DataLoader
-from torchvision import transforms
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score
+import torch
+from torch.utils.data import DataLoader, WeightedRandomSampler
+from sklearn.model_selection import GroupShuffleSplit
+
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 from dataset import MelanomaDataset
-from baseline_model import get_model
+from baseline_model import build_model
+import torch.nn as nn
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# paths
-CSV_PATH = "dataset/train.csv"
-IMG_DIR = "dataset/jpeg/train"
 
-# transforms
-train_transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor()
-])
+# Device
+# ======================
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    DEVICE = torch.device("mps")
+else:
+    DEVICE = torch.device("cpu")
 
-val_transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor()
-])
+print("Using device:", DEVICE)
 
-# load data
+
+# ======================
+# Paths
+# ======================
+DATASET_PATH = Path(os.getenv("DATASET_PATH", "dataset"))
+IMAGE_DIR = DATASET_PATH / "jpeg" / "train"
+CSV_PATH = DATASET_PATH / "train.csv"
+
+
+# ======================
+# Read dataframe
+# ======================
 df = pd.read_csv(CSV_PATH)
+df = df[["image_name", "patient_id", "target"]]
 
-# imbalance fix
-num_pos = df['target'].sum()
-num_neg = len(df) - num_pos
-pos_weight = torch.tensor([num_neg / num_pos]).to(device)
 
-# split
-train_df, val_df = train_test_split(df, test_size=0.2, stratify=df['target'])
+# ======================
+# Patient-wise split
+# ======================
+gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+train_idx, val_idx = next(gss.split(df, groups=df["patient_id"]))
 
-train_dataset = MelanomaDataset(train_df, IMG_DIR, train_transform)
-val_dataset = MelanomaDataset(val_df, IMG_DIR, val_transform)
+train_df = df.iloc[train_idx].reset_index(drop=True)
+val_df = df.iloc[val_idx].reset_index(drop=True)
 
-train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=16)
+print("Train shape:", train_df.shape)
+print("Val shape:", val_df.shape)
 
-# model
-model = get_model().to(device)
+overlap = set(train_df["patient_id"]).intersection(set(val_df["patient_id"]))
+print("Overlapping patients:", len(overlap))
 
-criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+# ======================
+# Imbalance
+# ======================
+class_counts = train_df["target"].value_counts().sort_index()
+num_neg = class_counts[0]
+num_pos = class_counts[1]
+pos_weight = num_neg / num_pos
+
+print("Imbalance ratio:", pos_weight)
+
+
+# ======================
+# Sampler
+# ======================
+sample_weights = train_df["target"].map({
+    0: 1.0,
+    1: pos_weight
+}).values
+
+sample_weights = torch.tensor(sample_weights, dtype=torch.float32)
+
+sampler = WeightedRandomSampler(
+    weights=sample_weights,
+    num_samples=len(sample_weights),
+    replacement=True
+)
+
+
+# ======================
+# Transforms
+# ======================
+
+train_transform = A.Compose([
+    A.Resize(224, 224),
+
+    A.HorizontalFlip(p=0.5),
+    A.VerticalFlip(p=0.5),
+
+    A.Affine(
+        translate_percent=0.05,
+        scale=(0.9, 1.1),
+        rotate=(-15, 15),
+        p=0.5
+    ),
+
+    A.RandomBrightnessContrast(p=0.3),
+    A.HueSaturationValue(p=0.3),
+
+    A.Normalize(),
+    ToTensorV2(),
+])
+
+val_transform = A.Compose([
+    A.Resize(224, 224),
+    A.Normalize(),
+    ToTensorV2(),
+])
+
+
+# ======================
+# Datasets
+# ======================
+train_dataset = MelanomaDataset(
+    df=train_df,
+    img_dir=IMAGE_DIR,
+    transform=train_transform   # 🔥 արդեն augmentation-ով
+)
+
+val_dataset = MelanomaDataset(
+    df=val_df,
+    img_dir=IMAGE_DIR,
+    transform=val_transform
+)
+
+
+# ======================
+# DataLoaders
+# ======================
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=32,
+    sampler=sampler,
+    num_workers=0
+)
+
+val_loader = DataLoader(
+    val_dataset,
+    batch_size=32,
+    shuffle=False,
+    num_workers=0
+)
+
+
+# ======================
+# Check sampler
+# ======================
+print("\n===== CHECK SAMPLER =====")
+batch_counter = Counter()
+
+for i, (_, labels) in enumerate(train_loader):
+    batch_counter.update(labels.tolist())
+    if i == 100:
+        break
+
+total = batch_counter[0] + batch_counter[1]
+
+print("Sampled counts:", batch_counter)
+print("Class 0 %:", 100 * batch_counter[0] / total)
+print("Class 1 %:", 100 * batch_counter[1] / total)
+
+
+
+
+model = build_model().to(DEVICE)
+
+criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-best_auc = 0
+EPOCHS = 3
 
-for epoch in range(5):
+for epoch in range(EPOCHS):
+    print(f"\n===== EPOCH {epoch+1}/{EPOCHS} =====")
+
     model.train()
-    total_loss = 0
+    running_loss = 0.0
 
-    for images, labels in train_loader:
-        images = images.to(device)
-        labels = labels.float().unsqueeze(1).to(device)
+    for batch_idx, (images, labels) in enumerate(train_loader):
+        images = images.to(DEVICE)
+        labels = labels.to(DEVICE)
+
+        optimizer.zero_grad()
 
         outputs = model(images)
         loss = criterion(outputs, labels)
 
-        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        total_loss += loss.item()
+        running_loss += loss.item()
 
-    print(f"Epoch {epoch+1} Loss: {total_loss/len(train_loader):.4f}")
+        if batch_idx % 100 == 0:
+            print(f"Batch {batch_idx}/{len(train_loader)} - Loss: {loss.item():.4f}")
 
-    # validation
-    model.eval()
-    preds, targets = [], []
+    avg_loss = running_loss / len(train_loader)
+    print(f"Train Loss: {avg_loss:.4f}")
 
-    with torch.no_grad():
-        for images, labels in val_loader:
-            images = images.to(device)
-            labels = labels.float().unsqueeze(1).to(device)
+from collections import Counter
 
-            outputs = model(images)
-            probs = torch.sigmoid(outputs)
+model.eval()
 
-            preds.extend(probs.cpu().numpy())
-            targets.extend(labels.cpu().numpy())
+all_preds = []
+all_labels = []
 
-    auc = roc_auc_score(targets, preds)
-    print(f"Epoch {epoch+1} AUC: {auc:.4f}")
+with torch.no_grad():
+    for images, labels in val_loader:
+        images = images.to(DEVICE)
+        labels = labels.to(DEVICE)
 
-    if auc > best_auc:
-        best_auc = auc
-        torch.save(model.state_dict(), "baseline_best.pth")
-        print("✅ saved best model")
+        outputs = model(images)
+        preds = torch.argmax(outputs, dim=1)
+
+        all_preds.extend(preds.cpu().numpy().tolist())
+        all_labels.extend(labels.cpu().numpy().tolist())
+
+print("\n===== PREDICTIONS =====")
+print("Predicted:", Counter(all_preds))
+print("Actual:", Counter(all_labels))
+
+from sklearn.metrics import confusion_matrix, classification_report
+
+print("\n===== CONFUSION MATRIX =====")
+print(confusion_matrix(all_labels, all_preds))
+
+print("\n===== CLASSIFICATION REPORT =====")
+print(classification_report(all_labels, all_preds, digits=4))
