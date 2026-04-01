@@ -291,13 +291,13 @@ val_df = df[df.fold == 0].reset_index(drop=True)
 train_transform = A.Compose([
     A.Resize(224, 224),
     A.HorizontalFlip(p=0.5),
-    A.VerticalFlip(p=0.5),
-    A.RandomRotate90(p=0.5),
-    A.ColorJitter(brightness=0.2, contrast=0.2, p=0.3),
-    A.Normalize(mean=(0.485, 0.456, 0.406),
-                std=(0.229, 0.224, 0.225)),
+    A.Normalize(
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225)
+    ),
     ToTensorV2()
 ])
+
 
 val_transform = A.Compose([
     A.Resize(224, 224),
@@ -443,7 +443,7 @@ eff_losses, eff_aucs = train_model(
     val_loader=val_loader,
     device=device,
     epochs=5,
-    lr=1e-4,
+    lr=5e-5,
     save_path="efficientnet_best.pth"
 )
 
@@ -452,6 +452,5 @@ print("\n📊 FINAL COMPARISON")
 
 print(f"ResNet50 Best AUC: {max(resnet_aucs):.4f}")
 print(f"EfficientNet Best AUC: {max(eff_aucs):.4f}")
-
 
 
