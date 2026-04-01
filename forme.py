@@ -86,8 +86,8 @@ val_transform = A.Compose([
 train_dataset = MelanomaDataset(train_df, train_path, train_transform)
 val_dataset = MelanomaDataset(val_df, train_path, val_transform)
 
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True,num_workers=2,pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=2, pin_memory=True)
 
 def validate(model, val_loader, device):
     model.eval()
