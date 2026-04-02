@@ -14,7 +14,7 @@ from preprocess import prepare_resized_images
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
-
+from tqdm import tqdm
 
 # ======================
 # DEVICE
@@ -79,15 +79,12 @@ val_df = df[df.fold == 0].reset_index(drop=True)
 # TRANSFORMS (minimal baseline)
 # ======================
 train_transform = A.Compose([
-    A.Resize(224, 224),
-    A.HorizontalFlip(p=0.5),
     A.Normalize(mean=(0.485, 0.456, 0.406),
                 std=(0.229, 0.224, 0.225)),
     ToTensorV2()
 ])
 
 val_transform = A.Compose([
-    A.Resize(224, 224),
     A.Normalize(mean=(0.485, 0.456, 0.406),
                 std=(0.229, 0.224, 0.225)),
     ToTensorV2()
@@ -103,42 +100,61 @@ val_dataset = MelanomaDataset(val_df, train_path, val_transform)
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
 
+class_counts = train_df["target"].value_counts()
+pos_weight = class_counts[0] / class_counts[1]
+
 
 # ======================
 # VALIDATION
 # ======================
-def validate(model, val_loader, device):
+
+def validate(model, val_loader, device, criterion):
     model.eval()
 
-    preds = []
-    targets = []
+    val_loss = 0.0
+    all_preds = []
+    all_targets = []
 
     with torch.no_grad():
         for inputs, labels in val_loader:
             inputs = inputs.to(device)
-            labels = labels.to(device).float()
+            labels = labels.to(device).float().unsqueeze(1)
 
-            outputs = model(inputs).squeeze(1)
+            outputs = model(inputs)
+
+            loss = criterion(outputs, labels)
+            val_loss += loss.item()
+
             probs = torch.sigmoid(outputs)
 
-            preds.extend(probs.cpu().numpy())
-            targets.extend(labels.cpu().numpy())
+            all_preds.extend(probs.cpu().numpy().flatten())
+            all_targets.extend(labels.cpu().numpy().flatten())
 
-    if len(set(targets)) < 2:
-        return 0.0
-
-    return roc_auc_score(targets, preds)
+ 
+    val_loss /= max(len(val_loader), 1)
 
 
-# ======================
-# TRAIN FUNCTION
-# ======================
+    # safer AUC
+    if len(set(int(x) for x in all_targets)) < 2:
+        auc = 0.0
+    else:
+        auc = roc_auc_score(all_targets, all_preds)
+
+    return val_loss, auc
+
+
 def train_model(model, train_loader, val_loader, device,
-                epochs=5, lr=1e-3, save_path="models/cnn_baseline.pth"):
+                epochs=5, lr=1e-3, save_path="best_model.pth"):
+
+    train_losses = []
+    val_losses = []
+    val_aucs = []
 
     model = model.to(device)
 
-    criterion = nn.BCEWithLogitsLoss()  # ✅ baseline (NO weights)
+    criterion = torch.nn.BCEWithLogitsLoss(
+    pos_weight=torch.tensor([pos_weight], dtype=torch.float32).to(device)
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     best_auc = 0.0
@@ -148,9 +164,8 @@ def train_model(model, train_loader, val_loader, device,
         model.train()
         running_loss = 0.0
 
-        print(f"\n🚀 Epoch [{epoch+1}/{epochs}]")
 
-        for batch_idx, (inputs, labels) in enumerate(train_loader):
+        for inputs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", leave=False):
 
             inputs = inputs.to(device)
             labels = labels.to(device).float().unsqueeze(1)
@@ -165,43 +180,58 @@ def train_model(model, train_loader, val_loader, device,
 
             running_loss += loss.item()
 
-            if batch_idx % 100 == 0:
-                print(f"Batch {batch_idx} | Loss: {loss.item():.4f}")
 
-        avg_loss = running_loss / len(train_loader)
+        train_loss = running_loss / len(train_loader)
+        train_losses.append(train_loss)
 
-        # validation
-        val_auc = validate(model, val_loader, device)
+        # ======================
+        # VALIDATION
+        # ======================
+        print("➡️ Running validation...")
 
-        print(f"📊 Loss: {avg_loss:.4f} | Val AUC: {val_auc:.4f}")
+        val_loss, val_auc = validate(model, val_loader, device, criterion)
+
+        val_losses.append(val_loss)
+        val_aucs.append(val_auc)
+
+        print(
+            f"📊 Epoch [{epoch+1}/{epochs}] | "
+            f"Train Loss: {train_loss:.4f} | "
+            f"Val Loss: {val_loss:.4f} | "
+            f"Val AUC: {val_auc:.4f}"
+        )
 
         if val_auc > best_auc:
             best_auc = val_auc
             torch.save(model.state_dict(), save_path)
-            print("💾 Saved best model")
+            print("💾 Best model saved")
 
     print(f"\n🔥 Best AUC: {best_auc:.4f}")
 
-    return best_auc
+    return train_losses, val_losses, val_aucs
+
 
 
 # ======================
-# RUN BASELINE
+# TRAIN BASELINE CNN
 # ======================
-model = get_model("cnn")  # 👈 SimpleCNN
+
+model = get_model("cnn")
 
 print("\n====================")
 print("Training Baseline CNN")
 print("====================")
 
-best_auc = train_model(
+train_losses, val_losses, val_aucs = train_model(
     model=model,
     train_loader=train_loader,
     val_loader=val_loader,
     device=device,
     epochs=5,
-    lr=1e-3
+    lr=1e-3,
+    save_path="models/baseline_cnn_best.pth"
 )
 
 print("\n📊 FINAL RESULT")
-print(f"Baseline AUC: {best_auc:.4f}")
+print(f"Best AUC: {max(val_aucs):.4f}")
+
