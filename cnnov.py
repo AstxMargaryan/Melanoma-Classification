@@ -73,6 +73,13 @@ for fold, (train_idx, val_idx) in enumerate(
 
 train_df = df[df.fold != 0].reset_index(drop=True)
 val_df = df[df.fold == 0].reset_index(drop=True)
+train_images = set(train_df["image_name"])
+val_images = set(val_df["image_name"])
+
+intersection = train_images.intersection(val_images)
+
+print("Overlap:", len(intersection))
+
 
 
 # ======================
@@ -100,8 +107,7 @@ val_dataset = MelanomaDataset(val_df, train_path, val_transform)
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
 
-class_counts = train_df["target"].value_counts()
-pos_weight = class_counts[0] / class_counts[1]
+
 
 
 # ======================
@@ -143,7 +149,7 @@ def validate(model, val_loader, device, criterion):
     return val_loss, auc
 
 
-def train_model(model, train_loader, val_loader, device,
+def train_model(model, train_loader, val_loader, device,pos_weight,
                 epochs=5, lr=1e-3, save_path="best_model.pth"):
 
     train_losses = []
@@ -210,7 +216,8 @@ def train_model(model, train_loader, val_loader, device,
 
     return train_losses, val_losses, val_aucs
 
-
+class_counts = train_df["target"].value_counts()
+pos_weight = class_counts[0] / class_counts[1]
 
 # ======================
 # TRAIN BASELINE CNN
@@ -227,6 +234,7 @@ train_losses, val_losses, val_aucs = train_model(
     train_loader=train_loader,
     val_loader=val_loader,
     device=device,
+    pos_weight=pos_weight,
     epochs=5,
     lr=1e-3,
     save_path="models/baseline_cnn_best.pth"
