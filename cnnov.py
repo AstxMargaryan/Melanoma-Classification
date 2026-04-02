@@ -16,6 +16,20 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from tqdm import tqdm
 
+import random
+import numpy as np
+
+
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+set_seed(42)
+
+
 # ======================
 # DEVICE
 # ======================
@@ -236,10 +250,79 @@ train_losses, val_losses, val_aucs = train_model(
     device=device,
     pos_weight=pos_weight,
     epochs=5,
-    lr=1e-3,
+    lr=1e-3,  # CNN → higher LR OK
     save_path="models/baseline_cnn_best.pth"
 )
 
-print("\n📊 FINAL RESULT")
+print("\n📊 FINAL RESULT (CNN)")
+print(f"Best AUC: {max(val_aucs):.4f}")
+
+
+import gc
+
+# del model
+# del train_losses, val_losses, val_aucs
+# gc.collect()
+
+# CUDA only (Colab)
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+
+
+# ======================
+# TRAIN RESNET50
+# ======================
+
+model = get_model("resnet50")
+
+print("\n====================")
+print("Training ResNet50")
+print("====================")
+
+train_losses, val_losses, val_aucs = train_model(
+    model=model,
+    train_loader=train_loader,
+    val_loader=val_loader,
+    device=device,
+    pos_weight=pos_weight,
+    epochs=5,
+    lr=1e-4,  # 🔥 IMPORTANT → smaller LR for pretrained
+    save_path="models/resnet50_best.pth"
+)
+
+print("\n📊 FINAL RESULT (ResNet50)")
+print(f"Best AUC: {max(val_aucs):.4f}")
+
+
+# del model
+# del train_losses, val_losses, val_aucs
+# gc.collect()
+
+# CUDA only
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+
+# ======================
+# TRAIN EFFICIENTNET_B0
+# ======================
+
+model = get_model("efficientnet_b0")
+
+print("\n====================")
+print("Training EfficientNet-B0")
+print("====================")
+
+train_losses, val_losses, val_aucs = train_model(
+    model=model,
+    train_loader=train_loader,
+    val_loader=val_loader,
+    device=device,
+    pos_weight=pos_weight,
+    epochs=5,
+    lr=1e-4,  # 🔥 pretrained → small LR
+    save_path="models/efficientnet_b0_best.pth"
+)
+
+print("\n📊 FINAL RESULT (EfficientNet)")
 print(f"Best AUC: {max(val_aucs):.4f}")
 
