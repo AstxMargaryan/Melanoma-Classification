@@ -260,13 +260,13 @@ print(f"Best AUC: {max(val_aucs):.4f}")
 
 import gc
 
-# del model
-# del train_losses, val_losses, val_aucs
-# gc.collect()
+del model
+del train_losses, val_losses, val_aucs
+gc.collect()
 
 # CUDA only (Colab)
-if torch.cuda.is_available():
-    torch.cuda.empty_cache()
+# if torch.cuda.is_available():
+#     torch.cuda.empty_cache()
 
 
 # ======================
@@ -294,13 +294,13 @@ print("\n📊 FINAL RESULT (ResNet50)")
 print(f"Best AUC: {max(val_aucs):.4f}")
 
 
-# del model
-# del train_losses, val_losses, val_aucs
-# gc.collect()
+del model
+del train_losses, val_losses, val_aucs
+gc.collect()
 
 # CUDA only
-if torch.cuda.is_available():
-    torch.cuda.empty_cache()
+# if torch.cuda.is_available():
+#     torch.cuda.empty_cache()
 
 # ======================
 # TRAIN EFFICIENTNET_B0

@@ -49,19 +49,48 @@ class BaselineCNN(nn.Module):
 
         return x
 
+import timm
+
+import timm
+import torch.nn as nn
+
 def get_model(model_name: str):
 
     if model_name == "cnn":
         return BaselineCNN()
 
     elif model_name == "resnet50":
-        return timm.create_model("resnet50", pretrained=True, num_classes=1)
+        model = timm.create_model(
+            "resnet50",
+            pretrained=True,
+            num_classes=1
+        )
 
     elif model_name == "efficientnet_b0":
-        return timm.create_model("efficientnet_b0", pretrained=True, num_classes=1)
+        model = timm.create_model(
+            "efficientnet_b0",
+            pretrained=True,
+            num_classes=1
+        )
+
+    elif model_name == "efficientnet_b3":
+        model = timm.create_model(
+            "efficientnet_b3",
+            pretrained=True,
+            num_classes=1
+        )
+
+    elif model_name == "efficientnet_b4":
+        model = timm.create_model(
+            "efficientnet_b4",
+            pretrained=True,
+            num_classes=1
+        )
 
     else:
         raise ValueError(f"Unknown model: {model_name}")
+
+    return model
 
     
 
