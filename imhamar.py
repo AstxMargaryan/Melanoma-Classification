@@ -131,7 +131,7 @@ train_transform_final = A.Compose([
         translate_percent={"x": (-0.05, 0.05), "y": (-0.05, 0.05)},
         scale=(0.90, 1.10),
         rotate=(-20, 20),
-        border_mode=0,
+
         p=0.5
     ),
 
