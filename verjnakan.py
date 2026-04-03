@@ -290,14 +290,14 @@ def create_dataloaders(train_df, val_df, train_transform, val_transform, train_p
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=0
+        num_workers=2
     )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0
+        num_workers=2
     )
 
     return train_loader, val_loader
@@ -373,9 +373,17 @@ def find_best_threshold(all_targets, all_probs):
 # =====================================================
 # 14. TRAIN ONE MODEL FOR ONE FOLD
 # =====================================================
-def train_model(model, train_loader, val_loader, device, pos_weight,
-                epochs=10, lr=1e-4, save_path="best_model.pth"):
-
+def train_model(
+    model,
+    train_loader,
+    val_loader,
+    device,
+    pos_weight,
+    epochs=8,
+    lr=1e-4,
+    save_path="best_model.pth",
+    patience=2
+):
     train_losses = []
     val_losses = []
     val_aucs = []
@@ -385,9 +393,11 @@ def train_model(model, train_loader, val_loader, device, pos_weight,
     criterion = nn.BCEWithLogitsLoss(
         pos_weight=torch.tensor([pos_weight], dtype=torch.float32).to(device)
     )
+
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     best_auc = 0.0
+    epochs_without_improvement = 0
 
     for epoch in range(epochs):
         model.train()
@@ -431,14 +441,23 @@ def train_model(model, train_loader, val_loader, device, pos_weight,
             best_auc = val_auc
             torch.save(model.state_dict(), save_path)
             print("💾 Best model saved")
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+            print(f"⏳ No improvement for {epochs_without_improvement} epoch(s)")
+
+        if epochs_without_improvement >= patience:
+            print(f"🛑 Early stopping triggered after {epoch+1} epochs")
+            break
 
     print(f"\n🔥 Best AUC: {best_auc:.4f}")
 
-    # reload best checkpoint for threshold tuning
+    # load best checkpoint
     state_dict = torch.load(save_path, map_location="cpu")
     model.load_state_dict(state_dict)
     model = model.to(device)
 
+    # final validation on best model for threshold tuning
     val_loss, val_auc, all_probs, all_targets = validate(
         model, val_loader, device, criterion
     )
@@ -448,8 +467,19 @@ def train_model(model, train_loader, val_loader, device, pos_weight,
     return train_losses, val_losses, val_aucs, best_threshold
 
 
-def run_5fold_training(model_name, df, external_df, train_path, train_transform, val_transform,
-                       device, epochs=10, lr=1e-4, batch_size=32):
+def run_5fold_training(
+    model_name,
+    df,
+    external_df,
+    train_path,
+    train_transform,
+    val_transform,
+    device,
+    epochs=8,
+    lr=1e-4,
+    batch_size=32,
+    patience=2
+):
     all_fold_aucs = []
     all_fold_thresholds = []
 
@@ -474,7 +504,6 @@ def run_5fold_training(model_name, df, external_df, train_path, train_transform,
         )
 
         model = get_model(model_name)
-
         save_path = f"models/{model_name}_fold{fold_num}.pth"
 
         train_losses, val_losses, val_aucs, best_threshold = train_model(
@@ -485,7 +514,8 @@ def run_5fold_training(model_name, df, external_df, train_path, train_transform,
             pos_weight=pos_weight,
             epochs=epochs,
             lr=lr,
-            save_path=save_path
+            save_path=save_path,
+            patience=patience
         )
 
         fold_best_auc = max(val_aucs)
@@ -512,6 +542,9 @@ def run_5fold_training(model_name, df, external_df, train_path, train_transform,
     return all_fold_aucs, all_fold_thresholds
 
 
+
+
+
 resnet_aucs, resnet_thresholds = run_5fold_training(
     model_name="resnet50",
     df=df,
@@ -520,9 +553,10 @@ resnet_aucs, resnet_thresholds = run_5fold_training(
     train_transform=train_transform_final,
     val_transform=val_transform,
     device=device,
-    epochs=10,
+    epochs=8,
     lr=1e-4,
-    batch_size=32
+    batch_size=32,
+    patience=2
 )
 
 # b3_aucs, b3_thresholds = run_5fold_training(
