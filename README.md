@@ -24,7 +24,7 @@ Each sample includes the following features:
 This problem is formulated as a probabilistic binary classification task, where the model estimates the probability that a given skin lesion is malignant.
 
 
-## How to Run
+## ⚙️ How to Run
 
 ### 1. Clone the repository
 
@@ -36,6 +36,13 @@ cd Melanoma-Classification
 
 ### 2. Create virtual environment
 
+**Mac/Linux:**
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
 **Windows:**
 
 ```bash
@@ -43,31 +50,25 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
-**Mac/Linux:**
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
 ###  3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-##  4. Dataset Setup
+## 📦 Dataset Setup
 
 The dataset is NOT included in this repository.
 
-### Option 1 — Download manually (Recommended)
+### 🖥️ Option 1 — Local Setup
 
-Download the dataset from Google Drive:
+Download the dataset:
 
-👉 [Download Dataset](https://drive.google.com/drive/folders/1y-LUVhRqnVz1XseVpAkFJ3PYm9Uu6-WB?usp=drive_link)
+📁 [Download Dataset](https://drive.google.com/drive/folders/1y-LUVhRqnVz1XseVpAkFJ3PYm9Uu6-WB)
 
-Then extract it into the project root so the structure looks like:
+Extract it into the project root:
 
-```bash
+```
 Melanoma-Classification/
 ├── dataset/
 │   ├── train.csv
@@ -76,17 +77,61 @@ Melanoma-Classification/
 │   ├── train/
 │   ├── test/
 │   ├── jpeg/
-│   └── tfrecords/
+│   │   ├── train/           ← original SIIM-ISIC training images
+│   │   └── test/            ← original SIIM-ISIC test images
+│   │
+│   │   ── External ──────────────────────────────
+│   ├── train-metadata.csv   ← external dataset labels
+│   └── image/               ← external ISIC images
 ```
 
-### Option 2 — Use Google Colab
+Run training:
 
-If running in Google Colab:
+```bash
+python3 train.py
+```
 
+### ☁️ Option 2 — Google Colab (Recommended — free T4 GPU🚀)
+
+
+**Step 1 — Mount Google Drive**
 ```bash
 from google.colab import drive
 drive.mount('/content/drive')
+```
+**Step 2 — Prepare dataset**
 
+```bash
+# Extract pre-resized images
+!unzip "/content/drive/MyDrive/dataset/jpeg_224.zip" -d /content/ -x "__MACOSX/*"
+
+# Extract external images
+!unzip "/content/drive/MyDrive/dataset/image.zip" -d /content/ -x "__MACOSX/*"
+
+# Copy CSV files
+!cp /content/drive/MyDrive/dataset/train.csv /content/train.csv
+!cp /content/drive/MyDrive/dataset/train-metadata.csv /content/train-metadata.csv
+```
+
+**Step 3 — Clone the repository**
+
+```bash
+!git clone https://github.com/AstxMargaryan/Melanoma-Classification.git
+%cd /content/Melanoma-Classification
+```
+**Step 4 — Install dependencies**
+
+```bash
+!pip install -r requirements.txt
+```
+
+**Step 5 — Set dataset path**
+
+```python
 import os
-os.environ["DATASET_PATH"] = "/content/drive/MyDrive/dataset"
+os.environ["DATASET_PATH"] = "/content"
+```
+**Step 5 — Run training**
+```bash
+!python3 train.py
 ```

@@ -1,5 +1,6 @@
-import torch.nn as nn
 import timm
+import torch.nn as nn
+
 
 class BaselineCNN(nn.Module):
     def __init__(self):
@@ -49,10 +50,6 @@ class BaselineCNN(nn.Module):
 
         return x
 
-import timm
-
-import timm
-import torch.nn as nn
 
 def get_model(model_name: str):
 
@@ -93,42 +90,3 @@ def get_model(model_name: str):
     return model
 
     
-
-
-# import torch.nn as nn
-# from torchvision import models
-
-# def get_resnet18_model(num_classes=1):
-#     model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
-
-#     in_features = model.fc.in_features
-#     model.fc = nn.Linear(in_features, num_classes)
-
-#     return model
-
-# import torch.nn as nn
-# from torchvision import models
-
-
-# def get_resnet50_model(num_classes=1):
-#     model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
-#     in_features = model.fc.in_features
-#     model.fc = nn.Linear(in_features, num_classes)
-#     return model
-
-# import timm
-
-# import timm
-# import torch.nn as nn
-
-# def get_model(model_name):
-#     if model_name == "resnet50":
-#         model = timm.create_model("resnet50", pretrained=True, num_classes=1)
-
-#     elif model_name == "efficientnet_b0":
-#         model = timm.create_model("efficientnet_b0", pretrained=True, num_classes=1)
-
-#     else:
-#         raise ValueError(f"Unknown model: {model_name}")
-
-#     return model

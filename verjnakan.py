@@ -290,14 +290,14 @@ def create_dataloaders(train_df, val_df, train_transform, val_transform, train_p
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=2
+        num_workers=0
     )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=2
+        num_workers=0
     )
 
     return train_loader, val_loader
