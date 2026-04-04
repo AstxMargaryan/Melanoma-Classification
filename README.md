@@ -1,27 +1,56 @@
-# Melanoma-Classification
+# 🔬 SIIM-ISIC Melanoma Classification
 
-## Project Overview
+<div align="center">
 
-Skin cancer is the most common type of cancer worldwide, and one of its most dangerous forms is melanoma. Although melanoma is relatively rare, it is responsible for approximately 75% of skin cancer-related deaths. Melanoma is a life-threatening disease, but when detected early, most cases can be successfully treated with minor surgery.
+**Deep Learning pipeline for automated melanoma detection from dermoscopic skin lesion images.**
 
-Detecting melanoma is a challenging task, as the differences between skin lesions are often subtle and difficult to identify even for experienced dermatologists. Artificial intelligence enables the analysis of medical images and the detection of hidden patterns, improving diagnostic accuracy and identifying features that may not be noticeable to dermatologists.
+## 🧬 What is Melanoma?
 
-The goal of this project is to develop a deep learning model that analyzes dermoscopic images of skin lesions and predicts the probability (0–1) of whether they are malignant (melanoma) or benign, with higher values indicating greater melanoma risk.
+Melanoma is the deadliest form of skin cancer, responsible for 75% of all skin cancer deaths despite being the least common type. It occurs when pigment-making cells in the skin, called melanocytes, begin to reproduce uncontrollably. Melanoma can form from an existing mole or develop on unblemished skin.
 
+![](media/image1.png)
+
+The most common type of melanoma spreads on the skin's surface. It is called superficial spreading melanoma. It may stay on the surface or grow down into deeper tissues. Other types of melanoma can start anywhere on or inside the body, including under fingernails or toenails and inside the eye.
+
+
+## 📋 Project Overview
+
+This project tackles the [SIIM-ISIC Melanoma Classification Kaggle Competition](https://www.kaggle.com/competitions/siim-isic-melanoma-classification/overview): given a dermoscopic image of a skin lesion, predict the probability that it is **malignant (melanoma)** or **benign**.
+
+
+### Dataset
+
+| Property | Details |
+|---|---|
+| Organizer | SIIM + International Skin Imaging Collaboration (ISIC) |
+| Training images | 33,126  |
+| Test images | 10,982 |
+| Format | JPEG / DICOM |
+| Labels | Binary — `0` benign · `1` malignant (melanoma) |
+| Patient metadata | Age, sex, anatomical site |
+| **Class split** | **~98.2% benign / ~1.8% malignant** |
+| Evaluation metric | **ROC-AUC** |
+
+
+### CSV Columns
+
+| Column | Description | Split |
+|---|---|---|
+| `image_name` | Unique identifier — filename of the related DICOM image | train + test |
+| `patient_id` | Unique patient identifier | train + test |
+| `sex` | Sex of the patient *(may be missing)* | train + test |
+| `age_approx` | Approximate patient age at time of imaging | train + test |
+| `anatom_site_general_challenge` | Anatomical location of the lesion | train + test |
+| `diagnosis` | Detailed diagnosis label | train only |
+| `benign_malignant` | Indicator of malignancy | train only |
+| `target` | Binary target — `0` benign · `1` malignant | train only |
+
+
+> ⚠️ **Class Imbalance:** A naive model that always predicts "benign" achieves 98% accuracy — but AUC of only 0.5. This is why we use AUC as the metric and `BCEWithLogitsLoss` with a computed `pos_weight` (~49×) to heavily penalize missed melanomas.
 The dataset consists of dermoscopic images of skin lesions along with associated metadata. Images are provided in DICOM format (as well as JPEG and TFRecord formats), while additional information is available in CSV files.
 
-Each sample includes the following features:
 
-- `image_name` – unique identifier, points to filename of related DICOM image  
-- `patient_id` – unique patient identifier  
-- `sex` – sex of the patient (may be missing)  
-- `age_approx` – approximate patient age at time of imaging  
-- `anatom_site_general_challenge` – anatomical location of the lesion  
-- `diagnosis` – detailed diagnosis (train only)  
-- `benign_malignant` – indicator of malignancy  
-- `target` – binary target (0 = benign, 1 = malignant)  
 
-This problem is formulated as a probabilistic binary classification task, where the model estimates the probability that a given skin lesion is malignant.
 
 
 ## ⚙️ How to Run

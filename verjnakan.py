@@ -4,7 +4,7 @@ import random
 import numpy as np
 import pandas as pd
 from pathlib import Path
-
+import matplotlib.pyplot as plt 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -22,13 +22,10 @@ from albumentations.pytorch import ToTensorV2
 from tqdm import tqdm
 
 from dataset import MelanomaDataset
-from baseline_model import get_model
+from model import get_model
 from preprocess import prepare_resized_images
 
 
-# =====================================================
-# 1. REPRODUCIBILITY
-# =====================================================
 def set_seed(seed=42):
     random.seed(seed)
     np.random.seed(seed)
@@ -40,9 +37,6 @@ def set_seed(seed=42):
 set_seed(42)
 
 
-# =====================================================
-# 2. DEVICE
-# =====================================================
 if torch.cuda.is_available():
     device = torch.device("cuda")
 elif torch.backends.mps.is_available():
@@ -53,9 +47,7 @@ else:
 print("Using device:", device)
 
 
-# =====================================================
-# 3. PATHS
-# =====================================================
+
 DATASET_PATH = Path(os.getenv("DATASET_PATH", "dataset"))
 
 # original SIIM-ISIC 2020 images
@@ -74,9 +66,7 @@ external_img_dir = DATASET_PATH / "image"
 os.makedirs("models", exist_ok=True)
 
 
-# =====================================================
-# 4. PREPROCESS ORIGINAL DATA (resize once)
-# =====================================================
+
 if not output_dir.exists() or len(os.listdir(output_dir)) == 0:
     prepare_resized_images(input_dir, output_dir)
 else:
@@ -85,9 +75,6 @@ else:
 train_path = output_dir
 
 
-# =====================================================
-# 5. LOAD ORIGINAL DATA
-# =====================================================
 df = pd.read_csv(labels_path)
 df = df[["image_name", "patient_id", "target"]]
 
@@ -97,9 +84,6 @@ print("Original shape:", df.shape)
 print("Original positives:", df["target"].sum())
 
 
-# =====================================================
-# 6. LOAD EXTERNAL DATA
-# =====================================================
 external_df = pd.read_csv(external_labels_path)
 
 print("\nRaw external df:")
@@ -134,9 +118,7 @@ print("External shape:", external_df.shape)
 print("External positives:", external_df["target"].sum())
 
 
-# =====================================================
-# 7. COPY EXTERNAL IMAGES INTO FINAL TRAIN FOLDER
-# =====================================================
+
 # we want all train images (original + external) available in one folder:
 # DATASET_PATH / jpeg_224 / train
 
@@ -156,9 +138,7 @@ print("Sample external image path:", sample_path)
 print("Exists:", sample_path.exists())
 
 
-# =====================================================
-# 8. CREATE STRATIFIED PATIENT-WISE FOLDS
-# =====================================================
+
 def create_stratified_split(df, n_splits=5):
     """
     Split original SIIM-ISIC 2020 data only.
@@ -193,9 +173,7 @@ for f in range(5):
     )
 
 
-# =====================================================
-# 9. PREPARE TRAIN/VAL FOR ONE FOLD
-# =====================================================
+
 def prepare_fold_data(df, external_df, fold_num):
     """
     For a given fold:
@@ -228,9 +206,14 @@ def prepare_fold_data(df, external_df, fold_num):
     return train_df, val_df, pos_weight
 
 
-# =====================================================
-# 10. AUGMENTATIONS
-# =====================================================
+train_transform_baseline = A.Compose([
+    A.Normalize(
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225)
+    ),
+    ToTensorV2()
+])
+
 train_transform_final = A.Compose([
     A.HorizontalFlip(p=0.5),
     A.VerticalFlip(p=0.5),
@@ -279,9 +262,6 @@ val_transform = A.Compose([
 ])
 
 
-# =====================================================
-# 11. DATALOADERS
-# =====================================================
 def create_dataloaders(train_df, val_df, train_transform, val_transform, train_path, batch_size=32):
     train_dataset = MelanomaDataset(train_df, train_path, train_transform)
     val_dataset = MelanomaDataset(val_df, train_path, val_transform)
@@ -303,9 +283,6 @@ def create_dataloaders(train_df, val_df, train_transform, val_transform, train_p
     return train_loader, val_loader
 
 
-# =====================================================
-# 12. VALIDATION
-# =====================================================
 def validate(model, val_loader, device, criterion):
     model.eval()
 
@@ -337,9 +314,6 @@ def validate(model, val_loader, device, criterion):
     return val_loss, auc, all_probs, all_targets
 
 
-# =====================================================
-# 13. THRESHOLD TUNING
-# =====================================================
 def find_best_threshold(all_targets, all_probs):
     best_threshold = 0.5
     best_f1 = 0.0
@@ -370,9 +344,6 @@ def find_best_threshold(all_targets, all_probs):
     return best_threshold, best_f1
 
 
-# =====================================================
-# 14. TRAIN ONE MODEL FOR ONE FOLD
-# =====================================================
 def train_model(
     model,
     train_loader,
@@ -467,8 +438,7 @@ def train_model(
     return train_losses, val_losses, val_aucs, best_threshold
 
 
-def run_5fold_training(
-    model_name,
+def run_kfold_training(model_name,
     df,
     external_df,
     train_path,
@@ -478,20 +448,19 @@ def run_5fold_training(
     epochs=8,
     lr=1e-4,
     batch_size=32,
-    patience=2
+    patience=2,
+    n_folds=5
 ):
     all_fold_aucs = []
     all_fold_thresholds = []
 
-    print("\n" + "=" * 60)
-    print(f"STARTING 5-FOLD TRAINING FOR: {model_name.upper()}")
-    print("=" * 60)
 
-    for fold_num in range(5):
-        print("\n" + "=" * 50)
+    print(f"STARTING TRAINING FOR: {model_name.upper()}")
+  
+
+    for fold_num in range(n_folds):
         print(f"TRAINING {model_name.upper()} | FOLD {fold_num}")
-        print("=" * 50)
-
+        
         train_df, val_df, pos_weight = prepare_fold_data(df, external_df, fold_num)
 
         train_loader, val_loader = create_dataloaders(
@@ -529,7 +498,7 @@ def run_5fold_training(
         del model
 
     print("\n" + "=" * 50)
-    print(f"{model_name.upper()} FINAL 5-FOLD RESULTS")
+    print(f"{model_name.upper()} RESULTS")
     print("=" * 50)
 
     for i, (auc, thr) in enumerate(zip(all_fold_aucs, all_fold_thresholds)):
@@ -542,10 +511,51 @@ def run_5fold_training(
     return all_fold_aucs, all_fold_thresholds
 
 
+def plot_training_curves(results, model_name):
+    train_losses = results["train_losses"][0]
+    val_losses = results["val_losses"][0]
+    val_aucs = results["val_auc_curves"][0]
+
+    # Loss
+    plt.figure(figsize=(8, 5))
+    plt.plot(train_losses, label="Train Loss")
+    plt.plot(val_losses, label="Validation Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title(f"{model_name} - Training vs Validation Loss")
+    plt.legend()
+    plt.show()
+
+    # AUC
+    plt.figure(figsize=(8, 5))
+    plt.plot(val_aucs, label="Validation AUC")
+    plt.xlabel("Epoch")
+    plt.ylabel("AUC")
+    plt.title(f"{model_name} - Validation AUC")
+    plt.legend()
+    plt.show()
 
 
 
-resnet_aucs, resnet_thresholds = run_5fold_training(
+
+
+cnn_results = run_kfold_training(
+    model_name="cnn",
+    df=df,
+    external_df=external_df,
+    train_path=train_path,
+    train_transform=train_transform_baseline,
+    val_transform=val_transform,
+    device=device,
+    epochs=3,
+    lr=1e-3,
+    batch_size=32,
+    patience=2,
+    n_folds=1
+)
+
+
+resnet_results = run_kfold_training(
     model_name="resnet50",
     df=df,
     external_df=external_df,
@@ -553,34 +563,82 @@ resnet_aucs, resnet_thresholds = run_5fold_training(
     train_transform=train_transform_final,
     val_transform=val_transform,
     device=device,
-    epochs=8,
+    epochs=5,
     lr=1e-4,
     batch_size=32,
-    patience=2
+    patience=2,
+    n_folds=5
 )
 
-# b3_aucs, b3_thresholds = run_5fold_training(
-#     model_name="efficientnet_b3",
-#     df=df,
-#     external_df=external_df,
-#     train_path=train_path,
-#     train_transform=train_transform_final,
-#     val_transform=val_transform,
-#     device=device,
-#     epochs=10,
-#     lr=1e-4,
-#     batch_size=32
-# )
+plot_training_curves(cnn_results, "Baseline CNN")
+plot_training_curves(resnet_results, "ResNet50 (Fold 0)")
 
-# b4_aucs, b4_thresholds = run_5fold_training(
-#     model_name="efficientnet_b4",
-#     df=df,
-#     external_df=external_df,
-#     train_path=train_path,
-#     train_transform=train_transform_final,
-#     val_transform=val_transform,
-#     device=device,
-#     epochs=10,
-#     lr=1e-4,
-#     batch_size=32
-# )
+
+b3_results = run_kfold_training(
+    model_name="efficientnet_b3",
+    df=df,
+    external_df=external_df,
+    train_path=train_path,
+    train_transform=train_transform_final,
+    val_transform=val_transform,
+    device=device,
+    epochs=3,
+    lr=1e-4,
+    batch_size=32,
+    patience=2,
+    n_folds=3
+)
+
+plot_training_curves(b3_results, "EfficientNet-B3 (Fold 0)")
+
+
+def summarize_model_results(name, results):
+    aucs = results["fold_aucs"]
+    thrs = results["fold_thresholds"]
+
+    print(f"{name}")
+    print(f"  Fold AUCs: {[round(x, 4) for x in aucs]}")
+    print(f"  Mean AUC: {np.mean(aucs):.4f}")
+    print(f"  Std AUC:  {np.std(aucs):.4f}")
+    print(f"  Mean Threshold: {np.mean(thrs):.4f}")
+    print()
+
+
+print("MODEL SUMMARY")
+summarize_model_results("Baseline CNN", cnn_results)
+summarize_model_results("ResNet50", resnet_results)
+summarize_model_results("EfficientNet-B3", b3_results)
+
+cnn_mean_auc = np.mean(cnn_results["fold_aucs"])
+resnet_mean_auc = np.mean(resnet_results["fold_aucs"])
+b3_mean_auc = np.mean(b3_results["fold_aucs"])
+
+print("IMPROVEMENT VS BASELINE CNN")
+print(f"ResNet50  - CNN: +{resnet_mean_auc - cnn_mean_auc:.4f}")
+print(f"EffNet-B3 - CNN: +{b3_mean_auc - cnn_mean_auc:.4f}")
+
+model_scores = {
+    "cnn": cnn_mean_auc,
+    "resnet50": resnet_mean_auc,
+    "efficientnet_b3": b3_mean_auc,
+}
+
+best_model_name = max(model_scores, key=model_scores.get)
+best_model_mean_auc = model_scores[best_model_name]
+
+if best_model_name == "cnn":
+    best_threshold = float(np.mean(cnn_results["fold_thresholds"]))
+elif best_model_name == "resnet50":
+    best_threshold = float(np.mean(resnet_results["fold_thresholds"]))
+elif best_model_name == "efficientnet_b3":
+    best_threshold = float(np.mean(b3_results["fold_thresholds"]))
+
+
+print("BEST SINGLE MODEL")
+print(f"Best model: {best_model_name}")
+print(f"Best mean AUC: {best_model_mean_auc:.4f}")
+print(f"Best threshold: {best_threshold:.4f}")
+
+
+
+
