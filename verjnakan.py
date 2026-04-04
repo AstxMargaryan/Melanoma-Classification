@@ -180,28 +180,67 @@ def prepare_fold_data(df, external_df, fold_num):
     - validation = original fold only
     - training = remaining original folds + ALL external data
     """
-    train_df = df[df["fold"] != fold_num].reset_index(drop=True)
+
+    # -----------------------------
+    # ORIGINAL TRAIN/VAL SPLIT
+    # -----------------------------
+    original_train_df = df[df["fold"] != fold_num].reset_index(drop=True)
     val_df = df[df["fold"] == fold_num].reset_index(drop=True)
 
-    # external data goes ONLY into train
-    train_df = pd.concat([train_df, external_df], ignore_index=True)
+    # original train stats
+    orig_class_counts = original_train_df["target"].value_counts().sort_index()
+    orig_pos_count = int(original_train_df["target"].sum())
+    orig_pos_rate = original_train_df["target"].mean()
 
-    # recompute pos_weight from merged train set
-    class_counts = train_df["target"].value_counts().sort_index()
-    pos_weight = class_counts[0] / class_counts[1]
+    if 0 in orig_class_counts and 1 in orig_class_counts:
+        orig_pos_weight = orig_class_counts[0] / orig_class_counts[1]
+    else:
+        orig_pos_weight = None
 
+    # -----------------------------
+    # MERGE EXTERNAL DATA
+    # -----------------------------
+    train_df = pd.concat([original_train_df, external_df], ignore_index=True)
+
+    # merged train stats
+    merged_class_counts = train_df["target"].value_counts().sort_index()
+    merged_pos_count = int(train_df["target"].sum())
+    merged_pos_rate = train_df["target"].mean()
+
+    if 0 in merged_class_counts and 1 in merged_class_counts:
+        pos_weight = merged_class_counts[0] / merged_class_counts[1]
+    else:
+        pos_weight = None
+
+    # -----------------------------
+    # PRINT COMPARISON
+    # -----------------------------
     print(f"\nFold {fold_num} summary:")
-    print("Train size:", len(train_df))
-    print("Train positives:", train_df["target"].sum())
-    print("Val size:", len(val_df))
-    print("Val positives:", val_df["target"].sum())
-    print("pos_weight:", round(pos_weight, 4))
+
+    print("Before external data:")
+    print("  Train size:", len(original_train_df))
+    print("  Positive samples:", orig_pos_count)
+    print(f"  Positive rate: {orig_pos_rate:.4f}")
+    if orig_pos_weight is not None:
+        print(f"  pos_weight: {orig_pos_weight:.4f}")
+
+    print("\nAfter external data:")
+    print("  Train size:", len(train_df))
+    print("  Positive samples:", merged_pos_count)
+    print(f"  Positive rate: {merged_pos_rate:.4f}")
+    if pos_weight is not None:
+        print(f"  pos_weight: {pos_weight:.4f}")
+
+    print("\nValidation:")
+    print("  Val size:", len(val_df))
+    print("  Val positives:", int(val_df["target"].sum()))
+    print(f"  Val positive rate: {val_df['target'].mean():.4f}")
 
     # verify no patient overlap in original split part
     train_patients = set(df[df["fold"] != fold_num]["patient_id"])
     val_patients = set(df[df["fold"] == fold_num]["patient_id"])
     overlap = train_patients.intersection(val_patients)
-    print("Original patient overlap:", len(overlap))
+    print("\nOriginal patient overlap:", len(overlap))
 
     return train_df, val_df, pos_weight
 
@@ -638,7 +677,3 @@ print("BEST SINGLE MODEL")
 print(f"Best model: {best_model_name}")
 print(f"Best mean AUC: {best_model_mean_auc:.4f}")
 print(f"Best threshold: {best_threshold:.4f}")
-
-
-
-
