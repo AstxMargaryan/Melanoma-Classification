@@ -3,12 +3,14 @@
 <div align="center">
 
 **Deep Learning pipeline for automated melanoma detection from dermoscopic skin lesion images.**
+</div>
 
 ## 🧬 What is Melanoma?
 
 Melanoma is the deadliest form of skin cancer, responsible for 75% of all skin cancer deaths despite being the least common type. It occurs when pigment-making cells in the skin, called melanocytes, begin to reproduce uncontrollably. Melanoma can form from an existing mole or develop on unblemished skin.
 
-![](media/image1.png)
+<img src="media/image1.png" width="300">
+
 
 The most common type of melanoma spreads on the skin's surface. It is called superficial spreading melanoma. It may stay on the surface or grow down into deeper tissues. Other types of melanoma can start anywhere on or inside the body, including under fingernails or toenails and inside the eye.
 
