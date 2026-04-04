@@ -309,14 +309,14 @@ def create_dataloaders(train_df, val_df, train_transform, val_transform, train_p
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=0
+        num_workers=2
     )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0
+        num_workers=2
     )
 
     return train_loader, val_loader
@@ -353,16 +353,13 @@ def validate(model, val_loader, device, criterion):
     return val_loss, auc, all_probs, all_targets
 
 
-def find_best_threshold_by_recall(all_targets, all_probs):
+def find_best_threshold_f2(all_targets, all_probs):
     best_threshold = 0.5
-    best_recall = -1.0
-    best_f1 = 0.0
-    best_precision = 0.0
-    best_acc = 0.0
+    best_f2 = 0.0
 
-    print("\nThreshold tuning results:")
+    print("\nThreshold tuning (F2-based):")
     print("-" * 80)
-    print(f"{'Threshold':<12}{'Accuracy':<12}{'Precision':<12}{'Recall':<12}{'F1':<12}")
+    print(f"{'Thr':<8}{'Acc':<10}{'Prec':<10}{'Recall':<10}{'F1':<10}{'F2':<10}")
     print("-" * 80)
 
     for threshold in [i / 100 for i in range(10, 91, 5)]:
@@ -373,24 +370,23 @@ def find_best_threshold_by_recall(all_targets, all_probs):
         recall = recall_score(all_targets, preds, zero_division=0)
         f1 = f1_score(all_targets, preds, zero_division=0)
 
-        print(f"{threshold:<12.2f}{acc:<12.4f}{precision:<12.4f}{recall:<12.4f}{f1:<12.4f}")
+        # 🔥 F2 calculation
+        if precision + recall == 0:
+            f2 = 0
+        else:
+            f2 = (5 * precision * recall) / (4 * precision + recall)
 
-        # choose threshold by highest recall
-        # if recall ties, choose better F1
-        if recall > best_recall or (recall == best_recall and f1 > best_f1):
-            best_recall = recall
-            best_f1 = f1
+        print(f"{threshold:<8.2f}{acc:<10.4f}{precision:<10.4f}{recall:<10.4f}{f1:<10.4f}{f2:<10.4f}")
+
+        if f2 > best_f2:
+            best_f2 = f2
             best_threshold = threshold
-            best_precision = precision
-            best_acc = acc
 
     print("-" * 80)
-    print(f"✅ Best threshold by Recall: {best_threshold:.2f}")
-    print(f"✅ Best Recall: {best_recall:.4f}")
-    print(f"✅ Precision at best recall threshold: {best_precision:.4f}")
-    print(f"✅ F1 at best recall threshold: {best_f1:.4f}")
+    print(f"✅ Best threshold (F2): {best_threshold:.2f}")
+    print(f"✅ Best F2: {best_f2:.4f}")
 
-    return best_threshold, best_recall
+    return best_threshold
 
 
 def train_model(
@@ -494,7 +490,7 @@ def train_model(
         model, val_loader, device, criterion
     )
 
-    best_threshold, best_recall = find_best_threshold_by_recall(all_targets, all_probs)
+    best_threshold = find_best_threshold_f2(all_targets, all_probs)
 
     return train_losses, val_losses, val_aucs, best_threshold
 
@@ -636,7 +632,7 @@ resnet_results = run_kfold_training(
     train_transform=train_transform_final,
     val_transform=val_transform,
     device=device,
-    epochs=5,
+    epochs=10,
     lr=1e-4,
     batch_size=32,
     patience=3,
@@ -653,7 +649,7 @@ b3_results = run_kfold_training(
     train_transform=train_transform_final,
     val_transform=val_transform,
     device=device,
-    epochs=5,
+    epochs=10,
     lr=1e-4,
     batch_size=32,
     patience=3,
