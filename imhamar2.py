@@ -64,6 +64,7 @@ external_labels_path = DATASET_PATH / "train-metadata.csv"
 external_img_dir = DATASET_PATH / "image"
 
 os.makedirs("models", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
 
 
 
@@ -586,7 +587,6 @@ def plot_training_curves(results, model_name):
     val_losses = results["val_losses"][0]
     val_aucs = results["val_auc_curves"][0]
 
-    # Loss
     plt.figure(figsize=(8, 5))
     plt.plot(train_losses, label="Train Loss")
     plt.plot(val_losses, label="Validation Loss")
@@ -594,16 +594,19 @@ def plot_training_curves(results, model_name):
     plt.ylabel("Loss")
     plt.title(f"{model_name} - Training vs Validation Loss")
     plt.legend()
-    plt.show()
 
-    # AUC
+    plt.savefig(f"plots/{model_name}_loss.png") 
+    plt.close()
+
     plt.figure(figsize=(8, 5))
     plt.plot(val_aucs, label="Validation AUC")
     plt.xlabel("Epoch")
     plt.ylabel("AUC")
     plt.title(f"{model_name} - Validation AUC")
     plt.legend()
-    plt.show()
+
+    plt.savefig(f"plots/{model_name}_auc.png")  
+    plt.close()
 
 
 
