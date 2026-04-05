@@ -48,13 +48,123 @@ This project tackles the [SIIM-ISIC Melanoma Classification Kaggle Competition](
 | `target` | Binary target — `0` benign · `1` malignant | train only |
 
 
-> ⚠️ **Class Imbalance:** A naive model that always predicts "benign" achieves 98% accuracy — but AUC of only 0.5. This is why we use AUC as the metric and `BCEWithLogitsLoss` with a computed `pos_weight` (~49×) to heavily penalize missed melanomas.
-The dataset consists of dermoscopic images of skin lesions along with associated metadata. Images are provided in DICOM format (as well as JPEG and TFRecord formats), while additional information is available in CSV files.
+---
+
+## 🏗️ Architecture
+
+Three models were trained and compared, progressing from a simple custom CNN to powerful ImageNet-pretrained networks.
+
+### 1. Baseline CNN
+
+A custom 3-layer Convolutional Neural Network built from scratch.
+
+```
+Input (224 × 224 × 3)
+         ↓
+Conv2d(3→32, k=3)  → BatchNorm2d → ReLU → MaxPool2d(2)
+         ↓
+Conv2d(32→64, k=3) → BatchNorm2d → ReLU → MaxPool2d(2)
+         ↓
+Conv2d(64→128, k=3) → BatchNorm2d → ReLU → MaxPool2d(2)
+         ↓
+AdaptiveAvgPool2d(1×1) → Flatten
+         ↓
+Linear(128→128) → ReLU → Dropout(0.4)
+         ↓
+Linear(128→1)   ← raw logit → sigmoid → P(melanoma)
+```
+**Training config:** 3 epochs · LR 1e-3 · batch 32 · no scheduler · no augmentation
+
+---
+---
+
+### 2. Pretrained Models — ResNet50 & EfficientNet-B3 (Fine-tuned)
+
+We used pretrained models initialized on ImageNet, loaded via `timm`. All models were adapted for binary classification by replacing the original classifier head with a single output neuron.
+
+| Model | Architecture |
+|---|---|
+| ResNet50 | Residual network, 50 layers |
+| EfficientNet-B3 ⭐ | Compound-scaled EfficientNet |
+
+**Shared training config:** Up to 10 epochs · LR 1e-4 · batch 32 · `ReduceLROnPlateau` scheduler · full augmentation pipeline · patience 3
+
+---
+---
+
+### Training Pipeline
+
+#### Class Imbalance & External Data
+
+The dataset is severely imbalanced — **98.2% benign / 1.8% malignant** — meaning a naive model that always predicts benign would achieve 98% accuracy while completely failing to detect melanoma. Before adding any external data, `pos_weight` (the ratio of negatives to positives) was **56.4**, reflecting how rare melanoma cases are in the original SIIM-ISIC 2020 dataset.
+
+<div align="center">
+<img src="media/image2.png" width="500">
+</div>
+
+To address this, we incorporated the **ISIC 2019 Classification training dataset** as external data. Its columns were aligned to match the structure of our main dataset (keeping `image_name`, `patient_id`, and `target`). After merging the external data into the training set, `pos_weight` dropped to **9.5** — a significant improvement that gives the model a much more balanced learning signal.
+
+#### Data Splitting
+
+The data was split into train and validation folds using **StratifiedKFold** based on `patient_id`. This patient-level split is important to prevent data leakage — since many patients have multiple images, a random image-level split could allow the same patient to appear in both train and validation, causing overly optimistic results. Stratification ensures each fold has a representative proportion of positive patients (a patient is considered positive if any of their images is a melanoma).
+
+**5-Fold Stratified Cross-Validation** is set up on the original SIIM-ISIC data, though only 1 fold is run per model by default (`n_folds=1`). The external ISIC 2019 data is merged **only into the training portion** of each fold — never into validation — to keep the evaluation clean.
+
+#### Augmentation Pipeline
+
+The Baseline CNN uses only normalization. ResNet50 and EfficientNet-B3 use a richer augmentation strategy to help the model generalize to the natural variability in dermoscopic images:
+
+| Augmentation | Probability | Purpose |
+|---|---|---|
+| Horizontal flip | 0.5 | Orientation invariance |
+| Vertical flip | 0.5 | Orientation invariance |
+| Random rotate 90° | 0.5 | Rotation invariance |
+| Affine (translate ±5%, scale 90–110%, rotate ±20°) | 0.5 | Spatial robustness |
+| Random brightness/contrast (±15%) | 0.4 | Lighting variation |
+| Blur (Gaussian / Motion / Median) | 0.15 | Sharpness robustness |
+| CoarseDropout (1–6 patches, 8–20px) | 0.20 | Occlusion robustness |
+| ImageNet normalization | always | Required for pretrained backbone |
 
 
+#### Dataset & DataLoader
+
+After splitting and augmentation setup, `MelanomaDataset` and `DataLoader` instances are built for both train and validation. The training loader shuffles data each epoch; the validation loader does not.
+
+#### Threshold Tuning
+
+After training, the best probability threshold for converting model outputs into binary predictions is chosen by maximizing the **F2 score**. F2 is used instead of F1 because in a medical screening context **recall matters more than precision** — missing a melanoma is far more dangerous than a false alarm — but precision is still factored in to avoid an impractically high false positive rate.
+
+$$F_2 = \frac{5 \cdot \text{precision} \cdot \text{recall}}{4 \cdot (\text{precision} + \text{recall})}$$
+
+#### Training Details
+
+Each model is trained using **`BCEWithLogitsLoss`** with the computed `pos_weight` to penalize missed melanomas proportionally to their rarity in the dataset. The **Adam optimizer** is used for its adaptive learning rate, which handles the sparse gradient updates that come with heavily imbalanced data. **Gradient clipping** (`max_norm=1.0`) is applied to prevent exploding gradients and keep training stable. For the pretrained models, a **`ReduceLROnPlateau` scheduler** monitors validation AUC and reduces the learning rate when improvement stalls, allowing the model to fine-tune more carefully in later epochs.
+
+The best model checkpoint (by validation AUC) is saved during training and reloaded at the end for threshold tuning. After all models are trained, their mean AUC scores are compared and the **best single model** is selected automatically.
 
 
+---
 
+
+## 📊 Results
+
+All models were evaluated on the held-out validation fold using **ROC-AUC** as the primary metric.
+
+| Model | Epochs | Augmentation | Val AUC |
+|---|---|---|---|
+| Baseline CNN | 3 | None | ~0.70–0.75 |
+| ResNet50 | ≤10 (early stop) | Full | ~0.85–0.88 |
+| **EfficientNet-B3** | **≤10 (early stop)** | **Full** | **~0.87–0.90** ⭐ |
+
+<div align="center">
+<img src="media/image3.png" width="500">
+</div>
+
+<div align="center">
+<img src="media/image4.png" width="500">
+</div>
+
+---
 ## ⚙️ How to Run
 
 ### 1. Clone the repository
