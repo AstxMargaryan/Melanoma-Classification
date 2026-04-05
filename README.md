@@ -9,7 +9,7 @@
 
 Melanoma is the deadliest form of skin cancer, responsible for 75% of all skin cancer deaths despite being the least common type. It occurs when pigment-making cells in the skin, called melanocytes, begin to reproduce uncontrollably. Melanoma can form from an existing mole or develop on unblemished skin.
 <div align="center">
-<img src="media/image1.png" width="300">
+<img src="media/image1.png" width="500">
 </div>
 
 The most common type of melanoma spreads on the skin's surface. It is called superficial spreading melanoma. It may stay on the surface or grow down into deeper tissues. Other types of melanoma can start anywhere on or inside the body, including under fingernails or toenails and inside the eye.
@@ -99,7 +99,7 @@ We used pretrained models initialized on ImageNet, loaded via `timm`. All models
 The dataset is severely imbalanced — **98.2% benign / 1.8% malignant** — meaning a naive model that always predicts benign would achieve 98% accuracy while completely failing to detect melanoma. Before adding any external data, `pos_weight` (the ratio of negatives to positives) was **56.4**, reflecting how rare melanoma cases are in the original SIIM-ISIC 2020 dataset.
 
 <div align="center">
-<img src="media/image2.png" width="500">
+<img src="media/image2.png" width="300">
 </div>
 
 To address this, we incorporated the **ISIC 2019 Classification training dataset** as external data. Its columns were aligned to match the structure of our main dataset (keeping `image_name`, `patient_id`, and `target`). After merging the external data into the training set, `pos_weight` dropped to **9.5** — a significant improvement that gives the model a much more balanced learning signal.
