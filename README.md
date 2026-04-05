@@ -5,6 +5,8 @@
 **Deep Learning pipeline for automated melanoma detection from dermoscopic skin lesion images.**
 </div>
 
+**💻 Authors:** Astghik Margaryan · Rafayel Galstyan · Anna Arakelyan
+
 ## 🧬 What is Melanoma?
 
 Melanoma is the deadliest form of skin cancer, responsible for 75% of all skin cancer deaths despite being the least common type. It occurs when pigment-making cells in the skin, called melanocytes, begin to reproduce uncontrollably. Melanoma can form from an existing mole or develop on unblemished skin.
@@ -99,7 +101,7 @@ We used pretrained models initialized on ImageNet, loaded via `timm`. All models
 The dataset is severely imbalanced — **98.2% benign / 1.8% malignant** — meaning a naive model that always predicts benign would achieve 98% accuracy while completely failing to detect melanoma. Before adding any external data, `pos_weight` (the ratio of negatives to positives) was **56.4**, reflecting how rare melanoma cases are in the original SIIM-ISIC 2020 dataset.
 
 <div align="center">
-<img src="media/image2.png" width="300">
+<img src="media/image2.png" width="500">
 </div>
 
 To address this, we incorporated the **ISIC 2019 Classification training dataset** as external data. Its columns were aligned to match the structure of our main dataset (keeping `image_name`, `patient_id`, and `target`). After merging the external data into the training set, `pos_weight` dropped to **9.5** — a significant improvement that gives the model a much more balanced learning signal.
@@ -148,21 +150,72 @@ The best model checkpoint (by validation AUC) is saved during training and reloa
 
 ## 📊 Results
 
-All models were evaluated on the held-out validation fold using **ROC-AUC** as the primary metric.
+All models were evaluated on the held-out validation fold (Fold 0) using **ROC-AUC** as the primary metric.
 
-| Model | Epochs | Augmentation | Val AUC |
-|---|---|---|---|
-| Baseline CNN | 3 | None | ~0.70–0.75 |
-| ResNet50 | ≤10 (early stop) | Full | ~0.85–0.88 |
-| **EfficientNet-B3** | **≤10 (early stop)** | **Full** | **~0.87–0.90** ⭐ |
+| Model | Epochs Run | Best Val AUC | Best Threshold (F2) | Best F2 |
+|---|---|---|---|---|
+| Baseline CNN | 3 | 0.8125 | 0.25 | 0.2032 |
+| ResNet50 | 7 (early stop) | 0.8880 | 0.30 | 0.3037 |
+| **EfficientNet-B3** ⭐ | **10 (early stop)** | **0.9183** | **0.25** | **0.4263** |
+
+**Improvement over Baseline CNN:**
+- ResNet50: **+0.0755 AUC**
+- EfficientNet-B3: **+0.1058 AUC**
+
+The best single model is **EfficientNet-B3** with a mean AUC of **0.9183** and a best threshold of **0.25**, saved at `models/efficientnet_b3_fold0.pth`.
+
+---
+
+### Training Curves
+
+Training and validation loss curves, along with validation AUC curves, are saved automatically to the `plots/` directory after training:
+
+```
+plots/
+├── Baseline CNN_loss.png
+├── Baseline CNN_auc.png
+├── ResNet50_loss.png
+├── ResNet50_auc.png
+├── EfficientNet-B3_loss.png
+└── EfficientNet-B3_auc.png
+```
+
+**Baseline CNN — Loss curve:**
 
 <div align="center">
-<img src="media/image3.png" width="500">
+<img src="plots/Baseline CNN_loss.png" width="500">
 </div>
 
+**Baseline CNN — Validation AUC curve:**
+
 <div align="center">
-<img src="media/image4.png" width="500">
+<img src="plots/Baseline CNN_auc.png" width="500">
 </div>
+
+**ResNet50 — Loss curve:**
+
+<div align="center">
+<img src="plots/ResNet50_loss.png" width="500">
+</div>
+
+**ResNet50 — Validation AUC curve:**
+
+<div align="center">
+<img src="plots/ResNet50_auc.png" width="500">
+</div>
+
+**EfficientNet-B3 — Loss curve:**
+
+<div align="center">
+<img src="plots/EfficientNet-B3_loss.png" width="500">
+</div>
+
+**EfficientNet-B3 — Validation AUC curve:**
+
+<div align="center">
+<img src="plots/EfficientNet-B3_auc.png" width="500">
+</div>
+
 
 ---
 ## ⚙️ How to Run
@@ -226,10 +279,10 @@ Melanoma-Classification/
 │   └── image/               ← external ISIC images
 ```
 
-Run training:
+Run prediction:
 
 ```bash
-python3 train.py
+python3 predict.py <path/to/image.jpg>
 ```
 
 ### ☁️ Option 2 — Google Colab (Recommended — free T4 GPU🚀)
@@ -272,7 +325,7 @@ drive.mount('/content/drive')
 import os
 os.environ["DATASET_PATH"] = "/content"
 ```
-**Step 5 — Run training**
+**Step 6 — Run prediction**
 ```bash
-!python3 train.py
+!python3 predict.py <path/to/image.jpg>
 ```

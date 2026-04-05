@@ -101,8 +101,6 @@ def predict(image_path, config_path="models/best_model_config.json"):
     print(f"Prediction: {label} | Confidence: {confidence * 100:.2f}%")
 
 
-
-
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python predict.py <image_path>")
