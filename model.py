@@ -70,12 +70,15 @@ def get_model(model_name: str):
             num_classes=1
         )
 
+
     elif model_name == "efficientnet_b3":
-        model = timm.create_model(
-            "efficientnet_b3",
-            pretrained=True,
-            num_classes=1
-        )
+            model = timm.create_model(
+                "efficientnet_b3",
+                pretrained=True,
+                num_classes=1,
+                drop_rate=0.4,      
+                drop_path_rate=0.2  
+            )
 
     elif model_name == "efficientnet_b4":
         model = timm.create_model(

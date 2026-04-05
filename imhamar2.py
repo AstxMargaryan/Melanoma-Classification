@@ -69,19 +69,13 @@ os.makedirs("models", exist_ok=True)
 os.makedirs("plots", exist_ok=True)
 
 
-
 if not output_dir.exists() or len(os.listdir(output_dir)) == 0:
     prepare_resized_images(input_dir, output_dir)
 else:
     print("Resized dataset already exists.")
 
-if not output_dir2.exists() or len(os.listdir(output_dir2)) == 0:
-    prepare_resized_images(input_dir, output_dir2, size=(300, 300))
-else:
-    print("300x300 Resized dataset already exists.")
 
 train_path = output_dir
-train_path2 = output_dir2
 
 df = pd.read_csv(labels_path)
 df = df[["image_name", "patient_id", "target"]]
@@ -652,7 +646,7 @@ b3_results = run_kfold_training(
     model_name="efficientnet_b3",
     df=df,
     external_df=external_df,
-    train_path=train_path2,
+    train_path=train_path,
     train_transform=train_transform_final,
     val_transform=val_transform,
     device=device,
