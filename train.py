@@ -369,7 +369,7 @@ def find_best_threshold_f2(all_targets, all_probs):
         recall = recall_score(all_targets, preds, zero_division=0)
         f1 = f1_score(all_targets, preds, zero_division=0)
 
-        # 🔥 F2 calculation
+        # F2 calculation
         if precision + recall == 0:
             f2 = 0
         else:
@@ -382,8 +382,8 @@ def find_best_threshold_f2(all_targets, all_probs):
             best_threshold = threshold
 
     
-    print(f"✅ Best threshold (F2): {best_threshold:.2f}")
-    print(f"✅ Best F2: {best_f2:.4f}")
+    print(f"Best threshold (F2): {best_threshold:.2f}")
+    print(f"Best F2: {best_f2:.4f}")
 
     return best_threshold
 
@@ -446,7 +446,7 @@ def train_model(
         train_loss = running_loss / len(train_loader)
         train_losses.append(train_loss)
 
-        print("➡️ Running validation...")
+        print("Running validation...")
 
         val_loss, val_auc, all_probs, all_targets = validate(
             model, val_loader, device, criterion
@@ -458,7 +458,7 @@ def train_model(
             scheduler.step(val_auc)
 
         print(
-            f"📊 Epoch [{epoch+1}/{epochs}] | "
+            f"Epoch [{epoch+1}/{epochs}] | "
             f"Train Loss: {train_loss:.4f} | "
             f"Val Loss: {val_loss:.4f} | "
             f"Val AUC: {val_auc:.4f}"
@@ -467,17 +467,17 @@ def train_model(
         if val_auc > best_auc:
             best_auc = val_auc
             torch.save(model.state_dict(), save_path)
-            print("💾 Best model saved")
+            print("Best model saved")
             epochs_without_improvement = 0
         else:
             epochs_without_improvement += 1
-            print(f"⏳ No improvement for {epochs_without_improvement} epoch(s)")
+            print(f"No improvement for {epochs_without_improvement} epoch(s)")
 
         if epochs_without_improvement >= patience:
-            print(f"🛑 Early stopping triggered after {epoch+1} epochs")
+            print(f"Early stopping triggered after {epoch+1} epochs")
             break
 
-    print(f"\n🔥 Best AUC: {best_auc:.4f}")
+    print(f"\n Best AUC: {best_auc:.4f}")
 
     # load best checkpoint
     state_dict = torch.load(save_path, map_location="cpu")
@@ -555,14 +555,14 @@ def run_kfold_training(
         all_fold_val_losses.append(val_losses)
         all_fold_val_aucs.append(val_aucs)
 
-        print(f"\n✅ {model_name} Fold {fold_num} best AUC: {fold_best_auc:.4f}")
-        print(f"✅ {model_name} Fold {fold_num} best threshold: {best_threshold:.2f}")
+        print(f"\n {model_name} Fold {fold_num} best AUC: {fold_best_auc:.4f}")
+        print(f" {model_name} Fold {fold_num} best threshold: {best_threshold:.2f}")
 
         del model
 
-    print("\n" + "=" * 50)
+    
     print(f"{model_name.upper()} RESULTS")
-    print("=" * 50)
+   
 
     for i, (auc, thr) in enumerate(zip(all_fold_aucs, all_fold_thresholds)):
         print(f"Fold {i}: AUC = {auc:.4f} | Threshold = {thr:.2f}")
@@ -731,4 +731,4 @@ config_path = "models/best_model_config.json"
 with open(config_path, "w") as f:
     json.dump(best_model_config, f, indent=4)
 
-print(f"\n✅ Best model config saved to: {config_path}")
+print(f"\n Best model config saved to: {config_path}")
