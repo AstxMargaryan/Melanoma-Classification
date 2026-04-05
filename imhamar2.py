@@ -1,6 +1,7 @@
 import os
 import shutil
 import random
+import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -55,6 +56,7 @@ input_dir = DATASET_PATH / "jpeg" / "train"
 
 # final training folder (all resized images will live here)
 output_dir = DATASET_PATH / "jpeg_224" / "train"
+output_dir2 = DATASET_PATH / "jpeg_300" / "train" 
 
 # main train csv
 labels_path = DATASET_PATH / "train.csv"
@@ -73,8 +75,13 @@ if not output_dir.exists() or len(os.listdir(output_dir)) == 0:
 else:
     print("Resized dataset already exists.")
 
-train_path = output_dir
+if not output_dir2.exists() or len(os.listdir(output_dir2)) == 0:
+    prepare_resized_images(input_dir, output_dir2, size=(300, 300))
+else:
+    print("300x300 Resized dataset already exists.")
 
+train_path = output_dir
+train_path2 = output_dir2
 
 df = pd.read_csv(labels_path)
 df = df[["image_name", "patient_id", "target"]]
@@ -182,9 +189,8 @@ def prepare_fold_data(df, external_df, fold_num):
     - training = remaining original folds + ALL external data
     """
 
-    # -----------------------------
+    
     # ORIGINAL TRAIN/VAL SPLIT
-    # -----------------------------
     original_train_df = df[df["fold"] != fold_num].reset_index(drop=True)
     val_df = df[df["fold"] == fold_num].reset_index(drop=True)
 
@@ -198,9 +204,8 @@ def prepare_fold_data(df, external_df, fold_num):
     else:
         orig_pos_weight = None
 
-    # -----------------------------
+    
     # MERGE EXTERNAL DATA
-    # -----------------------------
     train_df = pd.concat([original_train_df, external_df], ignore_index=True)
 
     # merged train stats
@@ -213,9 +218,8 @@ def prepare_fold_data(df, external_df, fold_num):
     else:
         pos_weight = None
 
-    # -----------------------------
+    
     # PRINT COMPARISON
-    # -----------------------------
     print(f"\nFold {fold_num} summary:")
 
     print("Before external data:")
@@ -383,7 +387,7 @@ def find_best_threshold_f2(all_targets, all_probs):
             best_f2 = f2
             best_threshold = threshold
 
-    print("-" * 80)
+    
     print(f"✅ Best threshold (F2): {best_threshold:.2f}")
     print(f"✅ Best F2: {best_f2:.4f}")
 
@@ -648,7 +652,7 @@ b3_results = run_kfold_training(
     model_name="efficientnet_b3",
     df=df,
     external_df=external_df,
-    train_path=train_path,
+    train_path=train_path2,
     train_transform=train_transform_final,
     val_transform=val_transform,
     device=device,
@@ -677,9 +681,8 @@ def summarize_model_results(name, results):
     print(f"  Mean Threshold: {np.mean(thrs):.4f}")
 
 
-print("\n" + "=" * 60)
+
 print("MODEL SUMMARY")
-print("=" * 60)
 
 summarize_model_results("Baseline CNN", cnn_results)
 summarize_model_results("ResNet50", resnet_results)
@@ -721,3 +724,17 @@ print(f"Best model: {best_model_name}")
 print(f"Best mean AUC: {best_model_mean_auc:.4f}")
 print(f"Best threshold: {best_threshold:.4f}")
 print(f"Best checkpoint: {best_checkpoint}")
+
+best_model_config = {
+    "model_name": best_model_name,
+    "checkpoint": best_checkpoint,
+    "threshold": float(best_threshold),
+    "best_auc": float(best_model_mean_auc)
+}
+
+config_path = "models/best_model_config.json"
+
+with open(config_path, "w") as f:
+    json.dump(best_model_config, f, indent=4)
+
+print(f"\n✅ Best model config saved to: {config_path}")
