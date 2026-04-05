@@ -263,7 +263,7 @@ drive.mount('/content/drive')
 **Step 4 — Install dependencies**
 
 ```bash
-!pip install -r requirements.txt
+!pip install -q albumentations==2.0.8 opencv-python-headless
 ```
 
 **Step 5 — Set dataset path**
