@@ -42,7 +42,7 @@ This project tackles the [SIIM-ISIC Melanoma Classification Kaggle Competition](
 |---|---|---|
 | `image_name` | Unique identifier — filename of the related DICOM image | train + test |
 | `patient_id` | Unique patient identifier | train + test |
-| `sex` | Sex of the patient *(may be missing)* | train + test |
+| `sex` | Sex of the patient  | train + test |
 | `age_approx` | Approximate patient age at time of imaging | train + test |
 | `anatom_site_general_challenge` | Anatomical location of the lesion | train + test |
 | `diagnosis` | Detailed diagnosis label | train only |
@@ -152,11 +152,11 @@ The best model checkpoint (by validation AUC) is saved during training and reloa
 
 All models were evaluated on the held-out validation fold (Fold 0) using **ROC-AUC** as the primary metric.
 
-| Model | Epochs Run | Best Val AUC | Best Threshold (F2) | Best F2 |
-|---|---|---|---|---|
-| Baseline CNN | 3 | 0.8125 | 0.25 | 0.2032 |
-| ResNet50 | 7 (early stop) | 0.8880 | 0.30 | 0.3037 |
-| **EfficientNet-B3** ⭐ | **10 (early stop)** | **0.9183** | **0.25** | **0.4263** |
+| Model |Best Val AUC | Best Threshold (F2) | Best F2 |
+|---|---|---|---|
+| Baseline CNN | 0.8125 | 0.25 | 0.2032 |
+| ResNet50 |  0.8880 | 0.30 | 0.3037 |
+| **EfficientNet-B3** ⭐ | **0.9183** | **0.25** | **0.4263** |
 
 **Improvement over Baseline CNN:**
 - ResNet50: **+0.0755 AUC**
