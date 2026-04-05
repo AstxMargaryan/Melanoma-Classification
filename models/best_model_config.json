@@ -1,0 +1,6 @@
+{
+    "model_name": "efficientnet_b3",
+    "checkpoint": "models/efficientnet_b3_fold0.pth",
+    "threshold": 0.25,
+    "best_auc": 0.9182948852840026
+}

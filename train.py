@@ -1,1225 +1,43 @@
-# import os
-# from collections import Counter
-
-# import pandas as pd
-# import torch
-# import torch.nn as nn
-# from pathlib import Path
-# from PIL import Image
-# from tqdm import tqdm
-# from torch.utils.data import DataLoader, WeightedRandomSampler
-# from torchvision import transforms
-# from sklearn.model_selection import GroupShuffleSplit
-# from sklearn.metrics import accuracy_score, f1_score, recall_score, precision_score
-
-# from dataset import MelanomaDataset
-# from baseline_model import BaselineCNN, get_resnet
-
-# # Device
-# # ======================
-# if torch.cuda.is_available():
-#     device = torch.device("cuda")
-# elif torch.backends.mps.is_available():
-#     device = torch.device("mps")
-# else:
-#     device = torch.device("cpu")
-
-# print("Using device:", device)
-
-
-# def prepare_resized_images(input_dir, output_dir, size=(224, 224)):
-#     input_dir = Path(input_dir)
-#     output_dir = Path(output_dir)
-
-#     if not input_dir.exists():
-#         raise FileNotFoundError(f"Input folder not found: {input_dir}")
-
-#     output_dir.mkdir(parents=True, exist_ok=True)
-
-#     image_files = [f for f in os.listdir(input_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
-#     print(f"Total images found: {len(image_files)}")
-
-#     for img_name in tqdm(image_files):
-#         input_path = input_dir / img_name
-#         output_path = output_dir / img_name
-
-#         if output_path.exists():
-#             continue
-
-#         try:
-#             img = Image.open(input_path).convert("RGB")
-#             img = img.resize(size)
-#             img.save(output_path)
-#         except Exception as e:
-#             print(f"❌ Error with {img_name}: {e}")
-
-#     print("✅ Resized dataset ready.")
-
-
-
-# DATASET_PATH = Path(os.getenv("DATASET_PATH", "dataset"))
-
-# input_dir = DATASET_PATH / "jpeg" / "train"
-# output_dir = DATASET_PATH / "jpeg_224" / "train"
-
-# train_path = DATASET_PATH / "jpeg_224" / "train"
-# test_path = DATASET_PATH / "jpeg" / "test"
-
-# labels_path = DATASET_PATH / "train.csv"
-# without_labels_path = DATASET_PATH / "test.csv"
-
-
-# if not output_dir.exists() or len(os.listdir(output_dir)) == 0:
-#     prepare_resized_images(input_dir, output_dir, size=(224, 224))
-# else:
-#     print("✅ Resized dataset already exists.")
-
-# # # Read dataframe
-
-# df = pd.read_csv(labels_path)
-# test_df = pd.read_csv(without_labels_path)
-# df = df[["image_name", "patient_id", "target"]]
-
-
-# # ======================
-# # Patient-wise split
-# # ======================
-# gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-# train_idx, val_idx = next(gss.split(df, groups=df["patient_id"]))
-
-# train_df = df.iloc[train_idx].reset_index(drop=True)
-# val_df = df.iloc[val_idx].reset_index(drop=True)
-
-# print("Train shape:", train_df.shape)
-# print("Val shape:", val_df.shape)
-
-# overlap = set(train_df["patient_id"]).intersection(set(val_df["patient_id"]))
-# print("Overlapping patients:", len(overlap))
-
-
-
-# # ======================
-# # Transforms
-# # ======================
-
-
-# train_transform = transforms.Compose([
-#     transforms.RandomHorizontalFlip(),
-#     transforms.RandomVerticalFlip(),
-#     transforms.RandomRotation(20),
-#     transforms.ColorJitter(brightness=0.2, contrast=0.2),
-#     transforms.ToTensor(),
-#     transforms.Normalize([0.485, 0.456, 0.406],
-#                          [0.229, 0.224, 0.225])
-# ])
-
-# val_transform = transforms.Compose([
-#     transforms.ToTensor(),
-#     transforms.Normalize([0.485, 0.456, 0.406],
-#                          [0.229, 0.224, 0.225])
-# ])
-
-
-
-# # ======================
-# # Datasets
-# # ======================
-# cnn_train_dataset = MelanomaDataset(train_df, train_path, train_transform)
-# cnn_val_dataset = MelanomaDataset(val_df, train_path, val_transform)
-
-# resnet_train_dataset = MelanomaDataset(train_df, train_path, train_transform)
-# resnet_val_dataset = MelanomaDataset(val_df, train_path, val_transform)
-
-
-# def make_sampler(df):
-#     pos_weight = (df["target"] == 0).sum() / (df["target"] == 1).sum()
-#     weights = df["target"].map({0: 1.0, 1: pos_weight}).values
-#     return WeightedRandomSampler(
-#         weights=torch.tensor(weights, dtype=torch.float32),
-#         num_samples=len(weights),
-#         replacement=True
-#     )
-
-# cnn_sampler = make_sampler(train_df)
-# resnet_sampler = make_sampler(train_df)
-
-
-# # ======================
-# # DataLoaders
-# # ======================
- 
-# cnn_train_loader = DataLoader(cnn_train_dataset, batch_size=32, sampler=cnn_sampler)
-# cnn_val_loader = DataLoader(cnn_val_dataset, batch_size=32, shuffle=False)
-
-# resnet_train_loader = DataLoader(resnet_train_dataset, batch_size=32, sampler=resnet_sampler)
-# resnet_val_loader = DataLoader(resnet_val_dataset, batch_size=32, shuffle=False)
-
-
-# # ======================
-# # Check sampler
-# # ======================
-# print("\n===== CHECK SAMPLER =====")
-# batch_counter = Counter()
-
-# for i, (_, labels) in enumerate(cnn_train_loader):
-#     batch_counter.update(labels.tolist())
-#     if i == 100:
-#         break
-
-# total = batch_counter[0.0] + batch_counter[1.0]
-
-# print("Sampled counts:", batch_counter)
-# print("Class 0 %:", 100 * batch_counter[0.0] / total)
-# print("Class 1 %:", 100 * batch_counter[1.0] / total)
-
-
-
-# # ======================
-# # Validation
-# # ======================
-# def validate(model, val_loader, device, criterion):
-#     model.eval()
-#     val_loss = 0.0
-
-#     all_labels = []
-#     all_preds = []
-#     all_probs = []
-
-#     print("🔍 Validation started...")
-
-#     with torch.no_grad():
-#         for batch_idx, (images, labels) in enumerate(val_loader):
-#             images = images.to(device, non_blocking=True)
-#             labels = labels.to(device).float().unsqueeze(1)
-
-#             outputs = model(images)
-#             loss = criterion(outputs, labels)
-
-#             val_loss += loss.item()
-
-#             probs = torch.sigmoid(outputs)
-#             preds = (probs >= 0.5).float()
-
-#             all_labels.extend(labels.cpu().numpy().flatten())
-#             all_probs.extend(probs.cpu().numpy().flatten()) 
-#             all_preds.extend(preds.cpu().numpy().flatten())
-
-#             if batch_idx % 100 == 0:
-#                 print(f"Val Batch {batch_idx}/{len(val_loader)} | Loss: {loss.item():.4f}")
-
-#     val_loss = val_loss / len(val_loader)
-
-#     val_acc = accuracy_score(all_labels, all_preds)
-#     val_f1 = f1_score(all_labels, all_preds, zero_division=0)
-#     val_recall = recall_score(all_labels, all_preds, zero_division=0)
-#     val_precision = precision_score(all_labels, all_preds, zero_division=0)
-
-#     print("✅ Validation done")
-
-#     return val_loss, val_acc, val_f1, val_recall, val_precision
-# # ======================
-# # Training
-# # ======================
-# def train_model(model, train_loader, val_loader, device, epochs=10, lr=0.001, save_path="model_best.pth"):
-#     model = model.to(device)
-
-#     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-#     criterion = nn.BCEWithLogitsLoss()
-
-#     train_losses = []
-#     val_losses = []
-#     val_accuracies = []
-#     val_f1s = []
-#     val_recalls = []
-#     val_precisions = []
-
-#     best_val_f1 = 0.0
-
-#     for epoch in range(epochs):
-#         model.train()
-#         running_loss = 0.0
-
-#         print(f"\n🚀 Starting Epoch {epoch+1}/{epochs}")
-
-#         for batch_idx, (images, labels) in enumerate(train_loader):
-#             images = images.to(device)
-#             labels = labels.to(device).float().unsqueeze(1)
-
-#             optimizer.zero_grad()
-
-#             outputs = model(images)
-#             loss = criterion(outputs, labels)
-
-#             loss.backward()
-#             optimizer.step()
-
-#             running_loss += loss.item()
-
-#             if batch_idx % 100 == 0:
-#                 print(f"Epoch {epoch+1} | Batch {batch_idx}/{len(train_loader)} | Loss: {loss.item():.4f}")
-
-#         epoch_train_loss = running_loss / len(train_loader)
-
-#         print("➡️ Running validation...")
-#         epoch_val_loss, val_acc, val_f1, val_recall, val_precision = validate(
-#             model, val_loader, device, criterion
-#         )
-
-#         train_losses.append(epoch_train_loss)
-#         val_losses.append(epoch_val_loss)
-#         val_accuracies.append(val_acc)
-#         val_f1s.append(val_f1)
-#         val_recalls.append(val_recall)
-#         val_precisions.append(val_precision)
-
-#         if val_f1 > best_val_f1:
-#             best_val_f1 = val_f1
-#             torch.save(model.state_dict(), save_path)
-#             print(f"💾 Best model saved to {save_path} | Val F1: {val_f1:.4f}")
-
-#         print(
-#             f"📊 Epoch {epoch+1}/{epochs} DONE | "
-#             f"Train Loss: {epoch_train_loss:.4f} | "
-#             f"Val Loss: {epoch_val_loss:.4f} | "
-#             f"Val Acc: {val_acc:.4f} | "
-#             f"Val F1: {val_f1:.4f} | "
-#             f"Val Recall: {val_recall:.4f} | "
-#             f"Val Precision: {val_precision:.4f}"
-#         )
-
-#     return {
-#         "model": model,
-#         "train_losses": train_losses,
-#         "val_losses": val_losses,
-#         "val_accuracies": val_accuracies,
-#         "val_f1s": val_f1s,
-#         "val_recalls": val_recalls,
-#         "val_precisions": val_precisions,
-#     }
-
-
-# # ======================
-# # Train CNN
-# # ======================
-# cnn_model = BaselineCNN()
-
-# cnn_results = train_model(
-#     model=cnn_model,
-#     train_loader=cnn_train_loader,
-#     val_loader=cnn_val_loader,
-#     device=device,
-#     epochs=10,
-#     lr=0.001,
-#     save_path="cnn_model_best.pth"
-# )
-
-
-
-# resnet_model = get_resnet()
-
-# resnet_results = train_model(
-#     model=resnet_model,
-#     train_loader=resnet_train_loader,
-#     val_loader=resnet_val_loader,
-#     device=device,
-#     epochs=10,
-#     lr=0.0001,        # lower LR for pretrained model
-#     save_path="resnet_model_best.pth"
-# )
-
-# ======================
-# Train ResNet18
-# ======================
-# resnet_model = get_resnet()
-
-# resnet_results = train_model(
-#     model=resnet_model,
-#     train_loader=resnet_train_loader,
-#     val_loader=resnet_val_loader,
-#     device=device,
-#     pos_weight=pos_weight,
-#     epochs=10,
-#     lr=0.0001,
-#     save_path="resnet_model_best.pth"
-# )
-# ======================
-# Imbalance
-# ======================
-# class_counts = train_df["target"].value_counts().sort_index()
-# num_neg = class_counts[0]
-# num_pos = class_counts[1]
-# pos_weight = num_neg / num_pos
-
-# print("Imbalance ratio:", pos_weight)
-
-# # ======================
-# # Sampler
-# # ======================
-# sample_weights = train_df["target"].map({
-#     0: 1.0,
-#     1: pos_weight
-# }).values
-
-# sample_weights = torch.tensor(sample_weights, dtype=torch.float32)
-
-# sampler = WeightedRandomSampler(
-#     weights=sample_weights,
-#     num_samples=len(sample_weights),
-#     replacement=True
-# )
-
-
-# cnn_train_loader = DataLoader(cnn_train_dataset, batch_size=32,sampler=sampler)
-# cnn_val_loader = DataLoader(cnn_val_dataset, batch_size=32, shuffle=False)
-
-# resnet_train_loader = DataLoader(resnet_train_dataset, batch_size=32, sampler=sampler)
-# resnet_val_loader = DataLoader(resnet_val_dataset, batch_size=32, shuffle=False)
-
-
-# import math
-# import os
-# from collections import Counter
-
-# import pandas as pd
-# import torch
-# import torch.nn as nn
-# from pathlib import Path
-# from PIL import Image
-# from tqdm import tqdm
-# from torch.utils.data import DataLoader
-# from torchvision import transforms
-# from sklearn.model_selection import GroupShuffleSplit
-# from sklearn.metrics import accuracy_score, f1_score, recall_score, precision_score
-
-# from dataset import MelanomaDataset
-# from baseline_model import BaselineCNN, get_resnet
-
-# # Device
-# # ======================
-# if torch.cuda.is_available():
-#     device = torch.device("cuda")
-# elif torch.backends.mps.is_available():
-#     device = torch.device("mps")
-# else:
-#     device = torch.device("cpu")
-
-# print("Using device:", device)
-
-
-# def prepare_resized_images(input_dir, output_dir, size=(224, 224)):
-#     input_dir = Path(input_dir)
-#     output_dir = Path(output_dir)
-
-#     if not input_dir.exists():
-#         raise FileNotFoundError(f"Input folder not found: {input_dir}")
-
-#     output_dir.mkdir(parents=True, exist_ok=True)
-
-#     image_files = [f for f in os.listdir(input_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
-#     print(f"Total images found: {len(image_files)}")
-
-#     for img_name in tqdm(image_files):
-#         input_path = input_dir / img_name
-#         output_path = output_dir / img_name
-
-#         if output_path.exists():
-#             continue
-
-#         try:
-#             img = Image.open(input_path).convert("RGB")
-#             img = img.resize(size)
-#             img.save(output_path)
-#         except Exception as e:
-#             print(f"❌ Error with {img_name}: {e}")
-
-#     print("✅ Resized dataset ready.")
-
-
-
-# DATASET_PATH = Path(os.getenv("DATASET_PATH", "dataset"))
-
-# input_dir = DATASET_PATH / "jpeg" / "train"
-# output_dir = DATASET_PATH / "jpeg_224" / "train"
-
-# train_path = DATASET_PATH / "jpeg_224" / "train"
-# test_path = DATASET_PATH / "jpeg" / "test"
-
-# labels_path = DATASET_PATH / "train.csv"
-# without_labels_path = DATASET_PATH / "test.csv"
-
-
-# if not output_dir.exists() or len(os.listdir(output_dir)) == 0:
-#     prepare_resized_images(input_dir, output_dir, size=(224, 224))
-# else:
-#     print("✅ Resized dataset already exists.")
-
-# # # Read dataframe
-
-# df = pd.read_csv(labels_path)
-# test_df = pd.read_csv(without_labels_path)
-# df = df[["image_name", "patient_id", "target"]]
-
-
-# # ======================
-# # Patient-wise split
-# # ======================
-# gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-# train_idx, val_idx = next(gss.split(df, groups=df["patient_id"]))
-
-# train_df = df.iloc[train_idx].reset_index(drop=True)
-# val_df = df.iloc[val_idx].reset_index(drop=True)
-
-# print("Train shape:", train_df.shape)
-# print("Val shape:", val_df.shape)
-
-# overlap = set(train_df["patient_id"]).intersection(set(val_df["patient_id"]))
-# print("Overlapping patients:", len(overlap))
-
-
-
-# # ======================
-# # Transforms
-# # ======================
-
-
-# train_transform = transforms.Compose([
-#     transforms.RandomHorizontalFlip(),
-#     transforms.RandomVerticalFlip(),
-#     transforms.RandomRotation(20),
-#     transforms.ColorJitter(brightness=0.2, contrast=0.2),
-#     transforms.ToTensor(),
-#     transforms.Normalize([0.485, 0.456, 0.406],
-#                          [0.229, 0.224, 0.225])
-# ])
-
-# val_transform = transforms.Compose([
-#     transforms.ToTensor(),
-#     transforms.Normalize([0.485, 0.456, 0.406],
-#                          [0.229, 0.224, 0.225])
-# ])
-
-
-
-# # ======================
-# # Datasets
-# # ======================
-# cnn_train_dataset = MelanomaDataset(train_df, train_path, train_transform)
-# cnn_val_dataset = MelanomaDataset(val_df, train_path, val_transform)
-
-# resnet_train_dataset = MelanomaDataset(train_df, train_path, train_transform)
-# resnet_val_dataset = MelanomaDataset(val_df, train_path, val_transform)
-
-
-# # class_counts = train_df["target"].value_counts().sort_index()
-# # num_neg = class_counts[0]
-# # num_pos = class_counts[1]
-# # pos_weight = num_neg / num_pos
-
-# # print("pos_weight:", pos_weight)
-
-
-# # ======================
-# # DataLoaders
-# # ======================
- 
-# cnn_train_loader = DataLoader(cnn_train_dataset, batch_size=32, shuffle=True)
-# cnn_val_loader = DataLoader(cnn_val_dataset, batch_size=32, shuffle=False)
-
-# resnet_train_loader = DataLoader(resnet_train_dataset, batch_size=32, shuffle=True)
-# resnet_val_loader = DataLoader(resnet_val_dataset, batch_size=32, shuffle=False)
-
-
-
-
-# # ======================
-# # Validation
-# # ======================
-# def validate(model, val_loader, device, criterion):
-#     model.eval()
-#     val_loss = 0.0
-
-#     all_labels = []
-#     all_preds = []
-#     all_probs = []
-
-#     print("🔍 Validation started...")
-
-#     with torch.no_grad():
-#         for batch_idx, (images, labels) in enumerate(val_loader):
-#             images = images.to(device, non_blocking=True)
-#             labels = labels.to(device).float().unsqueeze(1)
-
-#             outputs = model(images)
-#             loss = criterion(outputs, labels)
-
-#             val_loss += loss.item()
-
-#             probs = torch.sigmoid(outputs)
-#             preds = (probs >= 0.5).float()
-
-#             all_labels.extend(labels.cpu().numpy().flatten())
-#             all_probs.extend(probs.cpu().numpy().flatten()) 
-#             all_preds.extend(preds.cpu().numpy().flatten())
-
-#             if batch_idx % 100 == 0:
-#                 print(f"Val Batch {batch_idx}/{len(val_loader)} | Loss: {loss.item():.4f}")
-
-#     val_loss = val_loss / len(val_loader)
-
-#     val_acc = accuracy_score(all_labels, all_preds)
-#     val_f1 = f1_score(all_labels, all_preds, zero_division=0)
-#     val_recall = recall_score(all_labels, all_preds, zero_division=0)
-#     val_precision = precision_score(all_labels, all_preds, zero_division=0)
-
-#     print("✅ Validation done")
-
-#     return val_loss, val_acc, val_f1, val_recall, val_precision
-# # ======================
-# # Training
-# # ======================
-# def train_model(model, train_loader, val_loader, device, epochs=10, lr=0.001, save_path="model_best.pth"):
-#     model = model.to(device)
-
-#     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-#     # criterion = nn.BCEWithLogitsLoss(
-#     # pos_weight=torch.tensor([math.sqrt(pos_weight)], dtype=torch.float32, device=device)
-#     # )
-#     criterion = nn.BCEWithLogitsLoss()
-
-#     train_losses = []
-#     val_losses = []
-#     val_accuracies = []
-#     val_f1s = []
-#     val_recalls = []
-#     val_precisions = []
-
-#     best_val_f1 = 0.0
-
-#     for epoch in range(epochs):
-#         model.train()
-#         running_loss = 0.0
-
-#         print(f"\n🚀 Starting Epoch {epoch+1}/{epochs}")
-
-#         for batch_idx, (images, labels) in enumerate(train_loader):
-#             images = images.to(device)
-#             labels = labels.to(device).float().unsqueeze(1)
-
-#             optimizer.zero_grad()
-
-#             outputs = model(images)
-#             loss = criterion(outputs, labels)
-
-#             loss.backward()
-#             optimizer.step()
-
-#             running_loss += loss.item()
-
-#             if batch_idx % 100 == 0:
-#                 print(f"Epoch {epoch+1} | Batch {batch_idx}/{len(train_loader)} | Loss: {loss.item():.4f}")
-
-#         epoch_train_loss = running_loss / len(train_loader)
-
-#         print("➡️ Running validation...")
-#         epoch_val_loss, val_acc, val_f1, val_recall, val_precision = validate(
-#             model, val_loader, device, criterion
-#         )
-
-#         train_losses.append(epoch_train_loss)
-#         val_losses.append(epoch_val_loss)
-#         val_accuracies.append(val_acc)
-#         val_f1s.append(val_f1)
-#         val_recalls.append(val_recall)
-#         val_precisions.append(val_precision)
-
-#         if val_f1 > best_val_f1:
-#             best_val_f1 = val_f1
-#             torch.save(model.state_dict(), save_path)
-#             print(f"💾 Best model saved to {save_path} | Val F1: {val_f1:.4f}")
-
-#         print(
-#             f"📊 Epoch {epoch+1}/{epochs} DONE | "
-#             f"Train Loss: {epoch_train_loss:.4f} | "
-#             f"Val Loss: {epoch_val_loss:.4f} | "
-#             f"Val Acc: {val_acc:.4f} | "
-#             f"Val F1: {val_f1:.4f} | "
-#             f"Val Recall: {val_recall:.4f} | "
-#             f"Val Precision: {val_precision:.4f}"
-#         )
-
-#     return {
-#         "model": model,
-#         "train_losses": train_losses,
-#         "val_losses": val_losses,
-#         "val_accuracies": val_accuracies,
-#         "val_f1s": val_f1s,
-#         "val_recalls": val_recalls,
-#         "val_precisions": val_precisions,
-#     }
-
-
-# # ======================
-# # Train CNN
-# # ======================
-# cnn_model = BaselineCNN()
-
-# cnn_results = train_model(
-#     model=cnn_model,
-#     train_loader=cnn_train_loader,
-#     val_loader=cnn_val_loader,
-#     device=device,
-#     epochs=10,
-#     lr=0.001,
-#     save_path="cnn_model_best.pth"
-# )
-
-# resnet_model = get_resnet()
-
-# resnet_results = train_model(
-#     model=resnet_model,
-#     train_loader=resnet_train_loader,
-#     val_loader=resnet_val_loader,
-#     device=device,
-#     epochs=10,
-#     lr=0.0001,
-#     save_path="resnet_model_best.pth"
-# )
-
-
-# import os
-# from pathlib import Path
-
-# import pandas as pd
-# import torch
-# import torch.nn as nn
-# from PIL import Image
-# from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
-# from sklearn.model_selection import GroupShuffleSplit
-# from torch.utils.data import DataLoader
-# from torchvision import transforms
-# from tqdm import tqdm
-
-# from dataset import MelanomaDataset
-# from baseline_model import get_resnet
-
-
-# # ======================
-# # Device
-# # ======================
-# if torch.cuda.is_available():
-#     device = torch.device("cuda")
-# elif torch.backends.mps.is_available():
-#     device = torch.device("mps")
-# else:
-#     device = torch.device("cpu")
-
-# print("Using device:", device)
-
-
-# # ======================
-# # Resize images once
-# # ======================
-# def prepare_resized_images(input_dir, output_dir, size=(224, 224)):
-#     input_dir = Path(input_dir)
-#     output_dir = Path(output_dir)
-
-#     if not input_dir.exists():
-#         raise FileNotFoundError(f"Input folder not found: {input_dir}")
-
-#     output_dir.mkdir(parents=True, exist_ok=True)
-
-#     image_files = [
-#         f for f in os.listdir(input_dir)
-#         if f.lower().endswith((".jpg", ".jpeg", ".png"))
-#     ]
-#     print(f"Total images found: {len(image_files)}")
-
-#     for img_name in tqdm(image_files, desc="Resizing images"):
-#         input_path = input_dir / img_name
-#         output_path = output_dir / img_name
-
-#         if output_path.exists():
-#             continue
-
-#         try:
-#             img = Image.open(input_path).convert("RGB")
-#             img = img.resize(size)
-#             img.save(output_path)
-#         except Exception as e:
-#             print(f"Error processing {img_name}: {e}")
-
-#     print("Resized dataset ready.")
-
-
-# # ======================
-# # Paths
-# # ======================
-# DATASET_PATH = Path(os.getenv("DATASET_PATH", "dataset"))
-
-# input_dir = DATASET_PATH / "jpeg" / "train"
-# output_dir = DATASET_PATH / "jpeg_224" / "train"
-# labels_path = DATASET_PATH / "train.csv"
-
-# train_image_dir = output_dir
-
-# if not output_dir.exists() or len(os.listdir(output_dir)) == 0:
-#     prepare_resized_images(input_dir, output_dir, size=(224, 224))
-# else:
-#     print("Resized dataset already exists.")
-
-# # ======================
-# # Read CSV
-# # ======================
-# df = pd.read_csv(labels_path)
-# df = df[["image_name", "patient_id", "target"]]
-
-
-# # ======================
-# # Patient-wise split
-# # ======================
-# gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-# train_idx, val_idx = next(gss.split(df, groups=df["patient_id"]))
-
-# train_df = df.iloc[train_idx].reset_index(drop=True)
-# val_df = df.iloc[val_idx].reset_index(drop=True)
-
-# print("Train shape:", train_df.shape)
-# print("Val shape:", val_df.shape)
-
-# overlap = set(train_df["patient_id"]).intersection(set(val_df["patient_id"]))
-# print("Overlapping patients:", len(overlap))
-
-
-# # ======================
-# # Transforms
-# # ======================
-# train_transform = transforms.Compose([
-#     transforms.ToTensor(),
-#     transforms.Normalize([0.485, 0.456, 0.406],
-#                          [0.229, 0.224, 0.225])
-# ])
-
-# val_transform = transforms.Compose([
-#     transforms.ToTensor(),
-#     transforms.Normalize([0.485, 0.456, 0.406],
-#                          [0.229, 0.224, 0.225])
-# ])
-
-
-# # ======================
-# # Datasets and loaders
-# # ======================
-# train_dataset = MelanomaDataset(train_df, train_image_dir, transform=train_transform)
-# val_dataset = MelanomaDataset(val_df, train_image_dir, transform=val_transform)
-
-# train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-# val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
-
-
-# # ======================
-# # Validation
-# # ======================
-# def validate(model, val_loader, device, criterion):
-#     model.eval()
-#     total_loss = 0.0
-
-#     all_labels = []
-#     all_probs = []
-#     all_preds = []
-
-#     with torch.no_grad():
-#         for images, labels in val_loader:
-#             images = images.to(device)
-#             labels = labels.to(device).unsqueeze(1)
-
-#             outputs = model(images)
-#             loss = criterion(outputs, labels)
-
-#             probs = torch.sigmoid(outputs)
-#             preds = (probs >= 0.5).float()
-
-#             total_loss += loss.item() * images.size(0)
-
-#             all_labels.extend(labels.cpu().numpy().flatten())
-#             all_probs.extend(probs.cpu().numpy().flatten())
-#             all_preds.extend(preds.cpu().numpy().flatten())
-
-#     val_loss = total_loss / len(val_loader.dataset)
-#     val_acc = accuracy_score(all_labels, all_preds)
-#     val_f1 = f1_score(all_labels, all_preds, zero_division=0)
-#     val_recall = recall_score(all_labels, all_preds, zero_division=0)
-#     val_precision = precision_score(all_labels, all_preds, zero_division=0)
-
-#     try:
-#         val_auc = roc_auc_score(all_labels, all_probs)
-#     except ValueError:
-#         val_auc = 0.0
-
-#     return val_loss, val_acc, val_f1, val_recall, val_precision, val_auc
-
-
-# # ======================
-# # Training
-# # ======================
-# def train_model(model, train_loader, val_loader, device, epochs=10, lr=1e-4, save_path="resnet18_baseline_best.pth"):
-#     model = model.to(device)
-
-#     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-#     criterion = nn.BCEWithLogitsLoss()
-
-#     best_val_auc = 0.0
-
-#     for epoch in range(epochs):
-#         model.train()
-#         running_loss = 0.0
-
-#         print(f"\nStarting epoch {epoch + 1}/{epochs}")
-
-#         for batch_idx, (images, labels) in enumerate(train_loader):
-#             images = images.to(device)
-#             labels = labels.to(device).unsqueeze(1)
-
-#             optimizer.zero_grad()
-
-#             outputs = model(images)
-#             loss = criterion(outputs, labels)
-
-#             loss.backward()
-#             optimizer.step()
-
-#             running_loss += loss.item() * images.size(0)
-
-#             if batch_idx % 100 == 0:
-#                 print(f"Epoch {epoch + 1} | Batch {batch_idx}/{len(train_loader)} | Loss: {loss.item():.4f}")
-
-#         train_loss = running_loss / len(train_loader.dataset)
-
-#         val_loss, val_acc, val_f1, val_recall, val_precision, val_auc = validate(
-#             model, val_loader, device, criterion
-#         )
-
-#         print(f"Epoch {epoch + 1}/{epochs}")
-#         print(f"Train Loss:    {train_loss:.4f}")
-#         print(f"Val Loss:      {val_loss:.4f}")
-#         print(f"Val Accuracy:  {val_acc:.4f}")
-#         print(f"Val F1:        {val_f1:.4f}")
-#         print(f"Val Recall:    {val_recall:.4f}")
-#         print(f"Val Precision: {val_precision:.4f}")
-#         print(f"Val ROC-AUC:   {val_auc:.4f}")
-
-#         if val_auc > best_val_auc:
-#             best_val_auc = val_auc
-#             torch.save(model.state_dict(), save_path)
-#             print(f"Best model saved to {save_path}")
-
-#     print(f"\nTraining finished. Best Val ROC-AUC: {best_val_auc:.4f}")
-
-
-# # ======================
-# # Run training
-# # ======================
-# model = get_resnet()
-
-# train_model(
-#     model=model,
-#     train_loader=train_loader,
-#     val_loader=val_loader,
-#     device=device,
-#     epochs=10,
-#     lr=1e-4,
-#     save_path="resnet18_baseline_best.pth"
-# )
-
-
-
-
-
-
-
-
-
-# import os
-# import pandas as pd
-# import torch
-# import torch.nn as nn
-# from pathlib import Path
-# from PIL import Image
-# from tqdm import tqdm
-# from torch.utils.data import DataLoader
-# from torchvision import transforms
-# from sklearn.model_selection import GroupShuffleSplit
-# from sklearn.metrics import accuracy_score, f1_score, recall_score, precision_score
-
-# from dataset import MelanomaDataset
-# from baseline_model import BaselineCNN
-
-
-# # ======================
-# # Device
-# # ======================
-# if torch.cuda.is_available():
-#     device = torch.device("cuda")
-# elif torch.backends.mps.is_available():
-#     device = torch.device("mps")
-# else:
-#     device = torch.device("cpu")
-
-# print("Using device:", device)
-
-
-# # ======================
-# # Resize images once
-# # ======================
-# def prepare_resized_images(input_dir, output_dir, size=(224, 224)):
-#     input_dir = Path(input_dir)
-#     output_dir = Path(output_dir)
-
-#     if not input_dir.exists():
-#         raise FileNotFoundError(f"Input folder not found: {input_dir}")
-
-#     output_dir.mkdir(parents=True, exist_ok=True)
-
-#     image_files = [
-#         f for f in os.listdir(input_dir)
-#         if f.lower().endswith((".jpg", ".jpeg", ".png"))
-#     ]
-#     print(f"Total images found: {len(image_files)}")
-
-#     for img_name in tqdm(image_files):
-#         input_path = input_dir / img_name
-#         output_path = output_dir / img_name
-
-#         if output_path.exists():
-#             continue
-
-#         try:
-#             img = Image.open(input_path).convert("RGB")
-#             img = img.resize(size)
-#             img.save(output_path)
-#         except Exception as e:
-#             print(f"Error with {img_name}: {e}")
-
-#     print("Resized dataset ready.")
-
-
-# # ======================
-# # Paths
-# # ======================
-# DATASET_PATH = Path(os.getenv("DATASET_PATH", "dataset"))
-
-# input_dir = DATASET_PATH / "jpeg" / "train"
-# output_dir = DATASET_PATH / "jpeg_224" / "train"
-# train_path = DATASET_PATH / "jpeg_224" / "train"
-# labels_path = DATASET_PATH / "train.csv"
-
-# if not output_dir.exists() or len(os.listdir(output_dir)) == 0:
-#     prepare_resized_images(input_dir, output_dir, size=(224, 224))
-# else:
-#     print("Resized dataset already exists.")
-
-
-# # ======================
-# # Read dataframe
-# # ======================
-# df = pd.read_csv(labels_path)
-# df = df[["image_name", "patient_id", "target"]]
-
-
-# # ======================
-# # Patient-wise split
-# # ======================
-# gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-# train_idx, val_idx = next(gss.split(df, groups=df["patient_id"]))
-
-# train_df = df.iloc[train_idx].reset_index(drop=True)
-# val_df = df.iloc[val_idx].reset_index(drop=True)
-
-# print("Train shape:", train_df.shape)
-# print("Val shape:", val_df.shape)
-
-# overlap = set(train_df["patient_id"]).intersection(set(val_df["patient_id"]))
-# print("Overlapping patients:", len(overlap))
-
-
-# # ======================
-# # Imbalance
-# # ======================
-# class_counts = train_df["target"].value_counts().sort_index()
-# num_neg = class_counts[0]
-# num_pos = class_counts[1]
-# pos_weight = num_neg / num_pos
-
-# print("Imbalance ratio:", pos_weight)
-
-
-# # ======================
-# # Transforms
-# # ======================
-# train_transform = transforms.Compose([
-#     transforms.ToTensor(),
-#     transforms.Normalize([0.485, 0.456, 0.406],
-#                          [0.229, 0.224, 0.225])
-# ])
-
-# val_transform = transforms.Compose([
-#     transforms.ToTensor(),
-#     transforms.Normalize([0.485, 0.456, 0.406],
-#                          [0.229, 0.224, 0.225])
-# ])
-
-
-# # ======================
-# # Datasets
-# # ======================
-# cnn_train_dataset = MelanomaDataset(train_df, train_path, train_transform)
-# cnn_val_dataset = MelanomaDataset(val_df, train_path, val_transform)
-
-
-# # ======================
-# # DataLoaders
-# # ======================
-# cnn_train_loader = DataLoader(cnn_train_dataset, batch_size=32, shuffle=True)
-# cnn_val_loader = DataLoader(cnn_val_dataset, batch_size=32, shuffle=False)
-
-
-# # ======================
-# # Validation
-# # ======================
-# def validate(model, val_loader, device, criterion):
-#     model.eval()
-#     val_loss = 0.0
-
-#     all_labels = []
-#     all_preds = []
-
-#     print("Validation started...")
-
-#     with torch.no_grad():
-#         for batch_idx, (images, labels) in enumerate(val_loader):
-#             images = images.to(device, non_blocking=True)
-#             labels = labels.to(device).float().unsqueeze(1)
-
-#             outputs = model(images)
-#             loss = criterion(outputs, labels)
-
-#             val_loss += loss.item()
-
-#             probs = torch.sigmoid(outputs)
-#             preds = (probs >= 0.5).float()
-
-#             all_labels.extend(labels.cpu().numpy().flatten())
-#             all_preds.extend(preds.cpu().numpy().flatten())
-
-#             if batch_idx % 100 == 0:
-#                 print(f"Val Batch {batch_idx}/{len(val_loader)} | Loss: {loss.item():.4f}")
-
-#     val_loss /= len(val_loader)
-
-#     val_acc = accuracy_score(all_labels, all_preds)
-#     val_f1 = f1_score(all_labels, all_preds, zero_division=0)
-#     val_recall = recall_score(all_labels, all_preds, zero_division=0)
-#     val_precision = precision_score(all_labels, all_preds, zero_division=0)
-
-#     print("Validation done")
-
-#     return val_loss, val_acc, val_f1, val_recall, val_precision
-
-
-# # ======================
-# # Training
-# # ======================
-# def train_model(model, train_loader, val_loader, device, pos_weight, epochs=10, lr=0.001, save_path="cnn_model_best.pth"):
-#     model = model.to(device)
-
-#     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-#     criterion = nn.BCEWithLogitsLoss(
-#         pos_weight=torch.tensor([pos_weight], dtype=torch.float32, device=device)
-#     )
-
-#     best_val_f1 = 0.0
-
-#     for epoch in range(epochs):
-#         model.train()
-#         running_loss = 0.0
-
-#         print(f"\nStarting Epoch {epoch+1}/{epochs}")
-
-#         for batch_idx, (images, labels) in enumerate(train_loader):
-#             images = images.to(device, non_blocking=True)
-#             labels = labels.to(device).float().unsqueeze(1)
-
-#             optimizer.zero_grad()
-#             outputs = model(images)
-#             loss = criterion(outputs, labels)
-
-#             loss.backward()
-#             optimizer.step()
-
-#             running_loss += loss.item()
-
-#             if batch_idx % 100 == 0:
-#                 print(f"Epoch {epoch+1} | Batch {batch_idx}/{len(train_loader)} | Loss: {loss.item():.4f}")
-
-#         epoch_train_loss = running_loss / len(train_loader)
-
-#         print("Running validation...")
-#         epoch_val_loss, val_acc, val_f1, val_recall, val_precision = validate(
-#             model, val_loader, device, criterion
-#         )
-
-#         if val_f1 > best_val_f1:
-#             best_val_f1 = val_f1
-#             torch.save(model.state_dict(), save_path)
-#             print(f"Best model saved to {save_path} | Val F1: {val_f1:.4f}")
-
-#         print(
-#             f"Epoch {epoch+1}/{epochs} DONE | "
-#             f"Train Loss: {epoch_train_loss:.4f} | "
-#             f"Val Loss: {epoch_val_loss:.4f} | "
-#             f"Val Acc: {val_acc:.4f} | "
-#             f"Val F1: {val_f1:.4f} | "
-#             f"Val Recall: {val_recall:.4f} | "
-#             f"Val Precision: {val_precision:.4f}"
-#         )
-
-
-# # ======================
-# # Train CNN baseline
-# # ======================
-# cnn_model = BaselineCNN()
-
-# train_model(
-#     model=cnn_model,
-#     train_loader=cnn_train_loader,
-#     val_loader=cnn_val_loader,
-#     device=device,
-#     pos_weight=pos_weight,
-#     epochs=10,
-#     lr=0.001,
-#     save_path="cnn_model_best.pth"
-# )
-
-
 import os
-import math
+import shutil
+import random
+import json
+import numpy as np
 import pandas as pd
+from pathlib import Path
+import matplotlib.pyplot as plt 
 import torch
 import torch.nn as nn
-from pathlib import Path
-from PIL import Image
-from tqdm import tqdm
 from torch.utils.data import DataLoader
-from torchvision import transforms, models
-from sklearn.model_selection import GroupShuffleSplit
-from sklearn.metrics import accuracy_score, f1_score, recall_score, precision_score
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import (
+    roc_auc_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    accuracy_score,
+)
+
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+from tqdm import tqdm
 
 from dataset import MelanomaDataset
-from baseline_model import BaselineCNN, get_resnet18_model
+from model import get_model
+from preprocess import prepare_resized_images
 
 
-# ======================
-# Device
-# ======================
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+set_seed(42)
+
+
 if torch.cuda.is_available():
     device = torch.device("cuda")
 elif torch.backends.mps.is_available():
@@ -1230,52 +48,26 @@ else:
 print("Using device:", device)
 
 
-# ======================
-# Resize images once
-# ======================
-def prepare_resized_images(input_dir, output_dir, size=(224, 224)):
-    input_dir = Path(input_dir)
-    output_dir = Path(output_dir)
 
-    if not input_dir.exists():
-        raise FileNotFoundError(f"Input folder not found: {input_dir}")
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    image_files = [
-        f for f in os.listdir(input_dir)
-        if f.lower().endswith((".jpg", ".jpeg", ".png"))
-    ]
-    print(f"Total images found: {len(image_files)}")
-
-    for img_name in tqdm(image_files):
-        input_path = input_dir / img_name
-        output_path = output_dir / img_name
-
-        if output_path.exists():
-            continue
-
-        try:
-            img = Image.open(input_path).convert("RGB")
-            img = img.resize(size)
-            img.save(output_path)
-        except Exception as e:
-            print(f"Error with {img_name}: {e}")
-
-    print("Resized dataset ready.")
-
-
-
-# ======================
-# Paths
-# ======================
 DATASET_PATH = Path(os.getenv("DATASET_PATH", "dataset"))
 
+# original SIIM-ISIC 2020 images
 input_dir = DATASET_PATH / "jpeg" / "train"
-output_dir = DATASET_PATH / "jpeg_224" / "train"
 
-train_path = output_dir
+# final training folder (all resized images will live here)
+output_dir = DATASET_PATH / "jpeg_224" / "train"
+output_dir2 = DATASET_PATH / "jpeg_300" / "train" 
+
+# main train csv
 labels_path = DATASET_PATH / "train.csv"
+
+# external dataset csv and images
+external_labels_path = DATASET_PATH / "train-metadata.csv"
+external_img_dir = DATASET_PATH / "image"
+
+os.makedirs("models", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
+
 
 if not output_dir.exists() or len(os.listdir(output_dir)) == 0:
     prepare_resized_images(input_dir, output_dir)
@@ -1283,230 +75,660 @@ else:
     print("Resized dataset already exists.")
 
 
-# ======================
-# Data
-# ======================
+train_path = output_dir
+
 df = pd.read_csv(labels_path)
 df = df[["image_name", "patient_id", "target"]]
 
-gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-train_idx, val_idx = next(gss.split(df, groups=df["patient_id"]))
-
-train_df = df.iloc[train_idx].reset_index(drop=True)
-val_df = df.iloc[val_idx].reset_index(drop=True)
-
-print("Train shape:", train_df.shape)
-print("Val shape:", val_df.shape)
+print("\nOriginal main df:")
+print(df.head())
+print("Original shape:", df.shape)
+print("Original positives:", df["target"].sum())
 
 
-# ======================
-# Imbalance
-# ======================
-class_counts = train_df["target"].value_counts().sort_index()
-num_neg = class_counts[0]
-num_pos = class_counts[1]
-pos_weight = num_neg / num_pos
+external_df = pd.read_csv(external_labels_path)
 
-print("Imbalance ratio:", pos_weight)
+print("\nRaw external df:")
+print(external_df.head())
 
 
+# external file names are mixed:
+# some are ISIC_xxx.jpg
+# some are ISIC_xxx_downsampled.jpg
+def find_image_name(isic_id, img_dir):
+    if (img_dir / f"{isic_id}.jpg").exists():
+        return isic_id
+    elif (img_dir / f"{isic_id}_downsampled.jpg").exists():
+        return isic_id + "_downsampled"
+    else:
+        return None
 
 
-# ======================
-# Transforms
-# ======================
+external_df["image_name"] = external_df["isic_id"].apply(
+    lambda x: find_image_name(x, external_img_dir)
+)
 
-# CNN → simple
-cnn_transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
+# keep only rows where matching image exists
+external_df = external_df.dropna(subset=["image_name"])
+
+# keep only needed columns
+external_df = external_df[["image_name", "patient_id", "target"]]
+
+print("\nProcessed external df:")
+print(external_df.head())
+print("External shape:", external_df.shape)
+print("External positives:", external_df["target"].sum())
+
+
+
+# we want all train images (original + external) available in one folder:
+# DATASET_PATH / jpeg_224 / train
+
+copied_count = 0
+for img in external_img_dir.glob("*.jpg"):
+    target_path = output_dir / img.name
+    if not target_path.exists():
+        shutil.copy(img, target_path)
+        copied_count += 1
+
+print("\nCopied external images:", copied_count)
+
+# verify one sample external image exists in final train folder
+sample_name = external_df.iloc[0]["image_name"]
+sample_path = output_dir / f"{sample_name}.jpg"
+print("Sample external image path:", sample_path)
+print("Exists:", sample_path.exists())
+
+
+
+def create_stratified_split(df, n_splits=5):
+    """
+    Split original SIIM-ISIC 2020 data only.
+    One patient must belong to exactly one fold.
+    Stratification is done at patient level:
+    if a patient has at least one melanoma image -> patient target = 1
+    """
+    patient_df = df.groupby("patient_id")["target"].max().reset_index()
+
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    patient_df["fold"] = -1
+
+    for fold, (_, val_idx) in enumerate(
+        skf.split(patient_df["patient_id"], patient_df["target"])
+    ):
+        patient_df.loc[val_idx, "fold"] = fold
+
+    df = df.merge(patient_df[["patient_id", "fold"]], on="patient_id", how="left")
+    return df
+
+
+df = create_stratified_split(df, n_splits=5)
+
+print("\nFold statistics on ORIGINAL data:")
+for f in range(5):
+    fold_df = df[df["fold"] == f]
+    print(
+        f"Fold {f} | "
+        f"size={len(fold_df)} | "
+        f"positives={fold_df['target'].sum()} | "
+        f"positive_rate={fold_df['target'].mean():.4f}"
+    )
+
+
+
+def prepare_fold_data(df, external_df, fold_num):
+    """
+    For a given fold:
+    - validation = original fold only
+    - training = remaining original folds + ALL external data
+    """
+
+    
+    # ORIGINAL TRAIN/VAL SPLIT
+    original_train_df = df[df["fold"] != fold_num].reset_index(drop=True)
+    val_df = df[df["fold"] == fold_num].reset_index(drop=True)
+
+    # original train stats
+    orig_class_counts = original_train_df["target"].value_counts().sort_index()
+    orig_pos_count = int(original_train_df["target"].sum())
+    orig_pos_rate = original_train_df["target"].mean()
+
+    if 0 in orig_class_counts and 1 in orig_class_counts:
+        orig_pos_weight = orig_class_counts[0] / orig_class_counts[1]
+    else:
+        orig_pos_weight = None
+
+    
+    # MERGE EXTERNAL DATA
+    train_df = pd.concat([original_train_df, external_df], ignore_index=True)
+
+    # merged train stats
+    merged_class_counts = train_df["target"].value_counts().sort_index()
+    merged_pos_count = int(train_df["target"].sum())
+    merged_pos_rate = train_df["target"].mean()
+
+    if 0 in merged_class_counts and 1 in merged_class_counts:
+        pos_weight = merged_class_counts[0] / merged_class_counts[1]
+    else:
+        pos_weight = None
+
+    
+    # PRINT COMPARISON
+    print(f"\nFold {fold_num} summary:")
+
+    print("Before external data:")
+    print("  Train size:", len(original_train_df))
+    print("  Positive samples:", orig_pos_count)
+    print(f"  Positive rate: {orig_pos_rate:.4f}")
+    if orig_pos_weight is not None:
+        print(f"  pos_weight: {orig_pos_weight:.4f}")
+
+    print("\nAfter external data:")
+    print("  Train size:", len(train_df))
+    print("  Positive samples:", merged_pos_count)
+    print(f"  Positive rate: {merged_pos_rate:.4f}")
+    if pos_weight is not None:
+        print(f"  pos_weight: {pos_weight:.4f}")
+
+    print("\nValidation:")
+    print("  Val size:", len(val_df))
+    print("  Val positives:", int(val_df["target"].sum()))
+    print(f"  Val positive rate: {val_df['target'].mean():.4f}")
+
+    # verify no patient overlap in original split part
+    train_patients = set(df[df["fold"] != fold_num]["patient_id"])
+    val_patients = set(df[df["fold"] == fold_num]["patient_id"])
+    overlap = train_patients.intersection(val_patients)
+    print("\nOriginal patient overlap:", len(overlap))
+
+    return train_df, val_df, pos_weight
+
+
+train_transform_baseline = A.Compose([
+    A.Normalize(
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225)
+    ),
+    ToTensorV2()
 ])
 
-# ResNet → augmentation
-resnet_transform = transforms.Compose([
-    transforms.RandomHorizontalFlip(),
-    transforms.RandomRotation(15),
-    transforms.ColorJitter(brightness=0.2, contrast=0.2),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
+train_transform_final = A.Compose([
+    A.HorizontalFlip(p=0.5),
+    A.VerticalFlip(p=0.5),
+    A.RandomRotate90(p=0.5),
+
+    A.Affine(
+        translate_percent={"x": (-0.05, 0.05), "y": (-0.05, 0.05)},
+        scale=(0.90, 1.10),
+        rotate=(-20, 20),
+        p=0.5
+    ),
+
+    A.RandomBrightnessContrast(
+        brightness_limit=0.15,
+        contrast_limit=0.15,
+        p=0.4
+    ),
+
+    A.OneOf([
+        A.GaussianBlur(blur_limit=5),
+        A.MotionBlur(blur_limit=5),
+        A.MedianBlur(blur_limit=5),
+    ], p=0.15),
+
+    A.CoarseDropout(
+        num_holes_range=(1, 6),
+        hole_height_range=(8, 20),
+        hole_width_range=(8, 20),
+        fill=0,
+        p=0.20
+    ),
+
+    A.Normalize(
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225)
+    ),
+    ToTensorV2()
 ])
 
-val_transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
+val_transform = A.Compose([
+    A.Normalize(
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225)
+    ),
+    ToTensorV2()
 ])
 
 
-# ======================
-# Datasets
-# ======================
-cnn_train_dataset = MelanomaDataset(train_df, train_path, cnn_transform)
-cnn_val_dataset = MelanomaDataset(val_df, train_path, val_transform)
+def create_dataloaders(train_df, val_df, train_transform, val_transform, train_path, batch_size=32):
+    train_dataset = MelanomaDataset(train_df, train_path, train_transform)
+    val_dataset = MelanomaDataset(val_df, train_path, val_transform)
 
-resnet_train_dataset = MelanomaDataset(train_df, train_path, resnet_transform)
-resnet_val_dataset = MelanomaDataset(val_df, train_path, val_transform)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=2
+    )
 
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=2
+    )
 
-# ======================
-# Loaders
-# ======================
-cnn_train_loader = DataLoader(cnn_train_dataset, batch_size=32, shuffle=True)
-cnn_val_loader = DataLoader(cnn_val_dataset, batch_size=32)
-
-resnet_train_loader = DataLoader(resnet_train_dataset, batch_size=32, shuffle=True)
-resnet_val_loader = DataLoader(resnet_val_dataset, batch_size=32)
-
+    return train_loader, val_loader
 
 
 def validate(model, val_loader, device, criterion):
     model.eval()
+
     val_loss = 0.0
-
-    all_labels = []
-    all_preds = []
     all_probs = []
-
-    print("🔍 Validation started...")
+    all_targets = []
 
     with torch.no_grad():
-        for batch_idx, (images, labels) in enumerate(val_loader):
-            images = images.to(device, non_blocking=True)
+        for inputs, labels in val_loader:
+            inputs = inputs.to(device)
             labels = labels.to(device).float().unsqueeze(1)
 
-            outputs = model(images)
+            outputs = model(inputs)
             loss = criterion(outputs, labels)
-
             val_loss += loss.item()
 
             probs = torch.sigmoid(outputs)
-            preds = (probs >= 0.2).float()
 
-            all_labels.extend(labels.cpu().numpy().flatten())
             all_probs.extend(probs.cpu().numpy().flatten())
-            all_preds.extend(preds.cpu().numpy().flatten())
+            all_targets.extend(labels.cpu().numpy().flatten())
 
-            if batch_idx % 100 == 0:
-                print(f"Val Batch {batch_idx}/{len(val_loader)} | Loss: {loss.item():.4f}")
+    val_loss /= max(len(val_loader), 1)
 
-    val_loss = val_loss / len(val_loader)
+    if len(set(int(x) for x in all_targets)) < 2:
+        auc = 0.0
+    else:
+        auc = roc_auc_score(all_targets, all_probs)
 
-    val_acc = accuracy_score(all_labels, all_preds)
-    val_f1 = f1_score(all_labels, all_preds, zero_division=0)
-    val_recall = recall_score(all_labels, all_preds, zero_division=0)
-    val_precision = precision_score(all_labels, all_preds, zero_division=0)
-
-    print("✅ Validation done")
-
-    return val_loss, val_acc, val_f1, val_recall, val_precision
+    return val_loss, auc, all_probs, all_targets
 
 
+def find_best_threshold_f2(all_targets, all_probs):
+    best_threshold = 0.5
+    best_f2 = 0.0
+
+    print("\nThreshold tuning (F2-based):")
+    print("-" * 80)
+    print(f"{'Thr':<8}{'Acc':<10}{'Prec':<10}{'Recall':<10}{'F1':<10}{'F2':<10}")
+    print("-" * 80)
+
+    for threshold in [i / 100 for i in range(10, 91, 5)]:
+        preds = [1 if p >= threshold else 0 for p in all_probs]
+
+        acc = accuracy_score(all_targets, preds)
+        precision = precision_score(all_targets, preds, zero_division=0)
+        recall = recall_score(all_targets, preds, zero_division=0)
+        f1 = f1_score(all_targets, preds, zero_division=0)
+
+        # 🔥 F2 calculation
+        if precision + recall == 0:
+            f2 = 0
+        else:
+            f2 = (5 * precision * recall) / (4 * precision + recall)
+
+        print(f"{threshold:<8.2f}{acc:<10.4f}{precision:<10.4f}{recall:<10.4f}{f1:<10.4f}{f2:<10.4f}")
+
+        if f2 > best_f2:
+            best_f2 = f2
+            best_threshold = threshold
+
+    
+    print(f"✅ Best threshold (F2): {best_threshold:.2f}")
+    print(f"✅ Best F2: {best_f2:.4f}")
+
+    return best_threshold
 
 
-
-def train_model(model, train_loader, val_loader, device, pos_weight, epochs=10, lr=0.001, save_path="model_best.pth"):
-    model = model.to(device)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.BCEWithLogitsLoss(
-        pos_weight=torch.tensor([pos_weight], dtype=torch.float32, device=device)
-    )
-
+def train_model(
+    model,
+    train_loader,
+    val_loader,
+    device,
+    pos_weight,
+    epochs=8,
+    lr=1e-4,
+    save_path="best_model.pth",
+    patience=2,
+    use_scheduler=False
+):
     train_losses = []
     val_losses = []
-    val_accuracies = []
-    val_f1s = []
-    val_recalls = []
-    val_precisions = []
+    val_aucs = []
 
-    best_val_f1 = -1.0
+    model = model.to(device)
+
+    criterion = nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor([pos_weight], dtype=torch.float32).to(device)
+    )
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    scheduler = None
+    if use_scheduler:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="max",
+            factor=0.3,
+            patience=1
+        )
+
+    best_auc = 0.0
+    epochs_without_improvement = 0
 
     for epoch in range(epochs):
         model.train()
         running_loss = 0.0
 
-        print(f"\n🚀 Starting Epoch {epoch+1}/{epochs}")
-
-        for batch_idx, (images, labels) in enumerate(train_loader):
-            images = images.to(device)
+        for inputs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", leave=False):
+            inputs = inputs.to(device)
             labels = labels.to(device).float().unsqueeze(1)
 
             optimizer.zero_grad()
 
-            outputs = model(images)
+            outputs = model(inputs)
             loss = criterion(outputs, labels)
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             running_loss += loss.item()
 
-            if batch_idx % 100 == 0:
-                print(f"Epoch {epoch+1} | Batch {batch_idx}/{len(train_loader)} | Loss: {loss.item():.4f}")
-
-        epoch_train_loss = running_loss / len(train_loader)
+        train_loss = running_loss / len(train_loader)
+        train_losses.append(train_loss)
 
         print("➡️ Running validation...")
-        epoch_val_loss, val_acc, val_f1, val_recall, val_precision = validate(
+
+        val_loss, val_auc, all_probs, all_targets = validate(
             model, val_loader, device, criterion
         )
-        
 
-        train_losses.append(epoch_train_loss)
-        val_losses.append(epoch_val_loss)
-        val_accuracies.append(val_acc)
-        val_f1s.append(val_f1)
-        val_recalls.append(val_recall)
-        val_precisions.append(val_precision)
-
-        if val_f1 > best_val_f1:
-            best_val_f1 = val_f1
-            torch.save(model.state_dict(), save_path)
-            print(f"💾 Best model saved to {save_path} | Val F1: {val_f1:.4f}")
+        val_losses.append(val_loss)
+        val_aucs.append(val_auc)
+        if scheduler is not None:
+            scheduler.step(val_auc)
 
         print(
-            f"📊 Epoch {epoch+1}/{epochs} DONE | "
-            f"Train Loss: {epoch_train_loss:.4f} | "
-            f"Val Loss: {epoch_val_loss:.4f} | "
-            f"Val Acc: {val_acc:.4f} | "
-            f"Val F1: {val_f1:.4f} | "
-            f"Val Recall: {val_recall:.4f} | "
-            f"Val Precision: {val_precision:.4f}"
+            f"📊 Epoch [{epoch+1}/{epochs}] | "
+            f"Train Loss: {train_loss:.4f} | "
+            f"Val Loss: {val_loss:.4f} | "
+            f"Val AUC: {val_auc:.4f}"
         )
 
+        if val_auc > best_auc:
+            best_auc = val_auc
+            torch.save(model.state_dict(), save_path)
+            print("💾 Best model saved")
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+            print(f"⏳ No improvement for {epochs_without_improvement} epoch(s)")
+
+        if epochs_without_improvement >= patience:
+            print(f"🛑 Early stopping triggered after {epoch+1} epochs")
+            break
+
+    print(f"\n🔥 Best AUC: {best_auc:.4f}")
+
+    # load best checkpoint
+    state_dict = torch.load(save_path, map_location="cpu")
+    model.load_state_dict(state_dict)
+    model = model.to(device)
+
+    # final validation on best model for threshold tuning
+    val_loss, val_auc, all_probs, all_targets = validate(
+        model, val_loader, device, criterion
+    )
+
+    best_threshold = find_best_threshold_f2(all_targets, all_probs)
+
+    return train_losses, val_losses, val_aucs, best_threshold
+
+
+def run_kfold_training(
+    model_name,
+    df,
+    external_df,
+    train_path,
+    train_transform,
+    val_transform,
+    device,
+    epochs=8,
+    lr=1e-4,
+    batch_size=32,
+    patience=2,
+    n_folds=1,
+    use_scheduler=False
+):
+    all_fold_aucs = []
+    all_fold_thresholds = []
+    all_fold_train_losses = []
+    all_fold_val_losses = []
+    all_fold_val_aucs = []
+
+    print(f"\nSTARTING TRAINING FOR: {model_name.upper()}")
+
+    for fold_num in range(n_folds):
+        print(f"\nTRAINING {model_name.upper()} | FOLD {fold_num}")
+
+        train_df, val_df, pos_weight = prepare_fold_data(df, external_df, fold_num)
+
+        train_loader, val_loader = create_dataloaders(
+            train_df=train_df,
+            val_df=val_df,
+            train_transform=train_transform,
+            val_transform=val_transform,
+            train_path=train_path,
+            batch_size=batch_size
+        )
+
+        model = get_model(model_name)
+        save_path = f"models/{model_name}_fold{fold_num}.pth"
+
+        train_losses, val_losses, val_aucs, best_threshold = train_model(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            device=device,
+            pos_weight=pos_weight,
+            epochs=epochs,
+            lr=lr,
+            save_path=save_path,
+            patience=patience,
+            use_scheduler=use_scheduler
+        )
+
+        fold_best_auc = max(val_aucs)
+
+        all_fold_aucs.append(fold_best_auc)
+        all_fold_thresholds.append(best_threshold)
+        all_fold_train_losses.append(train_losses)
+        all_fold_val_losses.append(val_losses)
+        all_fold_val_aucs.append(val_aucs)
+
+        print(f"\n✅ {model_name} Fold {fold_num} best AUC: {fold_best_auc:.4f}")
+        print(f"✅ {model_name} Fold {fold_num} best threshold: {best_threshold:.2f}")
+
+        del model
+
+    print("\n" + "=" * 50)
+    print(f"{model_name.upper()} RESULTS")
+    print("=" * 50)
+
+    for i, (auc, thr) in enumerate(zip(all_fold_aucs, all_fold_thresholds)):
+        print(f"Fold {i}: AUC = {auc:.4f} | Threshold = {thr:.2f}")
+
+    print(f"\nMean AUC: {np.mean(all_fold_aucs):.4f}")
+    print(f"Std AUC: {np.std(all_fold_aucs):.4f}")
+    print(f"Mean Threshold: {np.mean(all_fold_thresholds):.2f}")
+
     return {
-        "model": model,
-        "train_losses": train_losses,
-        "val_losses": val_losses,
-        "val_accuracies": val_accuracies,
-        "val_f1s": val_f1s,
-        "val_recalls": val_recalls,
-        "val_precisions": val_precisions,
+        "fold_aucs": all_fold_aucs,
+        "fold_thresholds": all_fold_thresholds,
+        "train_losses": all_fold_train_losses,
+        "val_losses": all_fold_val_losses,
+        "val_auc_curves": all_fold_val_aucs,
     }
 
 
+def plot_training_curves(results, model_name):
+    train_losses = results["train_losses"][0]
+    val_losses = results["val_losses"][0]
+    val_aucs = results["val_auc_curves"][0]
 
-cnn_results = train_model(
-    model=BaselineCNN(),
-    train_loader=cnn_train_loader,
-    val_loader=cnn_val_loader,
+    plt.figure(figsize=(8, 5))
+    plt.plot(train_losses, label="Train Loss")
+    plt.plot(val_losses, label="Validation Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title(f"{model_name} - Training vs Validation Loss")
+    plt.legend()
+
+    plt.savefig(f"plots/{model_name}_loss.png") 
+    plt.close()
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(val_aucs, label="Validation AUC")
+    plt.xlabel("Epoch")
+    plt.ylabel("AUC")
+    plt.title(f"{model_name} - Validation AUC")
+    plt.legend()
+
+    plt.savefig(f"plots/{model_name}_auc.png")  
+    plt.close()
+
+
+
+cnn_results = run_kfold_training(
+    model_name="cnn",
+    df=df,
+    external_df=external_df,
+    train_path=train_path,
+    train_transform=train_transform_baseline,
+    val_transform=val_transform,
     device=device,
-    pos_weight=pos_weight,
-    epochs=10,
-    lr=0.001,
-    save_path="cnn_model_best.pth"
+    epochs=3,
+    lr=1e-3,
+    batch_size=32,
+    patience=2,
+    n_folds=1,
+    use_scheduler=False
 )
 
-import math
-resnet_results = train_model(
-    model=get_resnet18_model(),
-    train_loader=resnet_train_loader,
-    val_loader=resnet_val_loader,
+
+resnet_results = run_kfold_training(
+    model_name="resnet50",
+    df=df,
+    external_df=external_df,
+    train_path=train_path,
+    train_transform=train_transform_final,
+    val_transform=val_transform,
     device=device,
-    pos_weight=math.sqrt(pos_weight),
     epochs=10,
-    lr=0.0001,
-    save_path="resnet18_model_best.pth"
+    lr=1e-4,
+    batch_size=32,
+    patience=3,
+    n_folds=1,
+    use_scheduler=True
 )
+
+
+b3_results = run_kfold_training(
+    model_name="efficientnet_b3",
+    df=df,
+    external_df=external_df,
+    train_path=train_path,
+    train_transform=train_transform_final,
+    val_transform=val_transform,
+    device=device,
+    epochs=10,
+    lr=1e-4,
+    batch_size=32,
+    patience=3,
+    n_folds=1,
+    use_scheduler=True
+)
+
+plot_training_curves(cnn_results, "Baseline CNN")
+plot_training_curves(resnet_results, "ResNet50")
+plot_training_curves(b3_results, "EfficientNet-B3")
+
+
+
+def summarize_model_results(name, results):
+    aucs = results["fold_aucs"]
+    thrs = results["fold_thresholds"]
+
+    print(f"\n{name}")
+    print(f"  Fold AUCs: {[round(x, 4) for x in aucs]}")
+    print(f"  Mean AUC: {np.mean(aucs):.4f}")
+    print(f"  Std AUC:  {np.std(aucs):.4f}")
+    print(f"  Mean Threshold: {np.mean(thrs):.4f}")
+
+
+
+print("MODEL SUMMARY")
+
+summarize_model_results("Baseline CNN", cnn_results)
+summarize_model_results("ResNet50", resnet_results)
+summarize_model_results("EfficientNet-B3", b3_results)
+
+
+cnn_mean_auc = np.mean(cnn_results["fold_aucs"])
+resnet_mean_auc = np.mean(resnet_results["fold_aucs"])
+b3_mean_auc = np.mean(b3_results["fold_aucs"])
+
+
+print("IMPROVEMENT VS BASELINE CNN")
+print(f"ResNet50  - CNN: +{resnet_mean_auc - cnn_mean_auc:.4f}")
+print(f"EffNet-B3 - CNN: +{b3_mean_auc - cnn_mean_auc:.4f}")
+
+
+model_scores = {
+    "cnn": cnn_mean_auc,
+    "resnet50": resnet_mean_auc,
+    "efficientnet_b3": b3_mean_auc,
+}
+
+best_model_name = max(model_scores, key=model_scores.get)
+best_model_mean_auc = model_scores[best_model_name]
+
+if best_model_name == "cnn":
+    best_threshold = float(np.mean(cnn_results["fold_thresholds"]))
+    best_checkpoint = "models/cnn_fold0.pth"
+elif best_model_name == "resnet50":
+    best_threshold = float(np.mean(resnet_results["fold_thresholds"]))
+    best_checkpoint = "models/resnet50_fold0.pth"
+elif best_model_name == "efficientnet_b3":
+    best_threshold = float(np.mean(b3_results["fold_thresholds"]))
+    best_checkpoint = "models/efficientnet_b3_fold0.pth"
+
+
+print("BEST SINGLE MODEL")
+print(f"Best model: {best_model_name}")
+print(f"Best mean AUC: {best_model_mean_auc:.4f}")
+print(f"Best threshold: {best_threshold:.4f}")
+print(f"Best checkpoint: {best_checkpoint}")
+
+best_model_config = {
+    "model_name": best_model_name,
+    "checkpoint": best_checkpoint,
+    "threshold": float(best_threshold),
+    "best_auc": float(best_model_mean_auc)
+}
+
+config_path = "models/best_model_config.json"
+
+with open(config_path, "w") as f:
+    json.dump(best_model_config, f, indent=4)
+
+print(f"\n✅ Best model config saved to: {config_path}")
