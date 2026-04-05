@@ -63,13 +63,6 @@ def get_model(model_name: str):
             num_classes=1
         )
 
-    elif model_name == "efficientnet_b0":
-        model = timm.create_model(
-            "efficientnet_b0",
-            pretrained=True,
-            num_classes=1
-        )
-
 
     elif model_name == "efficientnet_b3":
             model = timm.create_model(
@@ -79,13 +72,6 @@ def get_model(model_name: str):
                 drop_rate=0.4,      
                 drop_path_rate=0.2  
             )
-
-    elif model_name == "efficientnet_b4":
-        model = timm.create_model(
-            "efficientnet_b4",
-            pretrained=True,
-            num_classes=1
-        )
 
     else:
         raise ValueError(f"Unknown model: {model_name}")
