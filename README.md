@@ -5,8 +5,6 @@
 **Deep Learning pipeline for automated melanoma detection from dermoscopic skin lesion images.**
 </div>
 
-**💻 Authors:** Astghik Margaryan · Rafayel Galstyan · Anna Arakelyan
-
 ## 🧬 What is Melanoma?
 
 Melanoma is the deadliest form of skin cancer, responsible for 75% of all skin cancer deaths despite being the least common type. It occurs when pigment-making cells in the skin, called melanocytes, begin to reproduce uncontrollably. Melanoma can form from an existing mole or develop on unblemished skin.
